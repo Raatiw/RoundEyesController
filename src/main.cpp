@@ -26,6 +26,7 @@ typedef struct
   int8_t  wink;
   uint8_t rotation;
   int16_t xposition;
+  int16_t yposition;
 } eyeInfo_t;
 
 #include "config.h"
@@ -54,6 +55,19 @@ void setup()
 
   Serial.println();
   Serial.println("RoundEyesController booting...");
+  Serial.printf("SPI pins -> CS:%d DC:%d RST:%d\n", TFT_CS, TFT_DC, TFT_RST);
+
+  pinMode(TFT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH); // keep deselected until init
+  pinMode(TFT_DC, OUTPUT);
+  digitalWrite(TFT_DC, HIGH);
+  pinMode(TFT_RST, OUTPUT);
+  digitalWrite(TFT_RST, HIGH);
+  delay(10);
+  digitalWrite(TFT_RST, LOW);
+  delay(10);
+  digitalWrite(TFT_RST, HIGH);
+  delay(120);
 
 #if (DISPLAY_BACKLIGHT >= 0)
   pinMode(DISPLAY_BACKLIGHT, OUTPUT);
@@ -77,18 +91,24 @@ void setup()
       delay(1000);
     }
   }
-gfx->fillScreen(GREEN);
-      delay(1000);
 
-  if (NUM_EYES > 0)
-  {
-    gfx->setRotation(eye[0].rotation);
-  }
-  gfx->fillScreen(GREEN);
+  const uint8_t rotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
+  gfx->setRotation(rotation);
+  Serial.println("GC9A01 init ok");
 
 #if (DISPLAY_BACKLIGHT >= 0)
   digitalWrite(DISPLAY_BACKLIGHT, HIGH);
+  Serial.printf("Backlight GPIO %d set HIGH\n", DISPLAY_BACKLIGHT);
 #endif
+
+  const uint16_t testColors[] = {RED, GREEN, BLUE, WHITE};
+  for (uint8_t i = 0; i < (sizeof(testColors) / sizeof(testColors[0])); ++i)
+  {
+    gfx->fillScreen(testColors[i]);
+    Serial.printf("Filled test color index %u\n", i);
+    delay(500);
+  }
+  gfx->fillScreen(BLACK);
 
   startTime = millis();
   Serial.println("Eye animation initialized");

@@ -35,6 +35,7 @@ typedef struct {
   int16_t   tft_cs;     // Chip select pin for each display
   eyeBlink  blink;      // Current blink/wink state
   int16_t   xposition;  // x position of eye image
+  int16_t   yposition;  // y position of eye image
   uint8_t   rotation;   // Display rotation setting
 } EyeState;
 
@@ -77,6 +78,7 @@ void initEyes(void)
     eye[e].tft_cs      = eyeInfo[e].select;
     eye[e].blink.state = NOBLINK;
     eye[e].xposition   = eyeInfo[e].xposition;
+    eye[e].yposition   = eyeInfo[e].yposition;
     eye[e].rotation    = eyeInfo[e].rotation;
 
     if (eye[e].tft_cs >= 0) {
@@ -180,7 +182,7 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
     yield();
   }
 
-  gfx->draw16bitRGBBitmap(eye[e].xposition, 0, eyeFrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT);
+  gfx->draw16bitRGBBitmap(eye[e].xposition, eye[e].yposition, eyeFrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT);
 }
 
 // EYE ANIMATION -----------------------------------------------------------
