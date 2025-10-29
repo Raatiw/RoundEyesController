@@ -4,6 +4,42 @@
 // detailed in the original header below. Assorted changes have been
 // made including removal of the display mirror kludge.
 
+#pragma once
+
+#include <Arduino.h>
+#include <Arduino_GFX_Library.h>
+
+#ifndef USBSerial
+#define USBSerial Serial
+#endif
+
+extern Arduino_GFX *gfx;
+extern uint32_t startTime;
+extern uint16_t eyeFrameBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
+void frame(uint16_t iScale);
+void split(int16_t startValue, int16_t endValue, uint32_t startTimeValue,
+           int32_t duration, int16_t range);
+
+// A simple state machine is used to control eye blinks/winks:
+#define NOBLINK 0       // Not currently engaged in a blink
+#define ENBLINK 1       // Eyelid is currently closing
+#define DEBLINK 2       // Eyelid is currently opening
+typedef struct {
+  uint8_t  state;       // NOBLINK/ENBLINK/DEBLINK
+  uint32_t duration;    // Duration of blink state (micros)
+  uint32_t startTime;   // Time (micros) of last state change
+} eyeBlink;
+
+typedef struct {
+  int16_t   tft_cs;     // Chip select pin for each display
+  eyeBlink  blink;      // Current blink/wink state
+  int16_t   xposition;  // x position of eye image
+  uint8_t   rotation;   // Display rotation setting
+} EyeState;
+
+extern EyeState eye[NUM_EYES];
+
 //--------------------------------------------------------------------------
 // Uncanny eyes for Adafruit 1.5" OLED (product #1431) or 1.44" TFT LCD
 // (#2088).  Works on PJRC Teensy 3.x and on Adafruit M0 and M4 boards
@@ -41,9 +77,12 @@ void initEyes(void)
     eye[e].tft_cs      = eyeInfo[e].select;
     eye[e].blink.state = NOBLINK;
     eye[e].xposition   = eyeInfo[e].xposition;
+    eye[e].rotation    = eyeInfo[e].rotation;
 
-    pinMode(eye[e].tft_cs, OUTPUT);
-    digitalWrite(eye[e].tft_cs, LOW);
+    if (eye[e].tft_cs >= 0) {
+      pinMode(eye[e].tft_cs, OUTPUT);
+      digitalWrite(eye[e].tft_cs, LOW);
+    }
 
     // Also set up an individual eye-wink pin if defined:
     if (eyeInfo[e].wink >= 0) pinMode(eyeInfo[e].wink, INPUT_PULLUP);
@@ -104,28 +143,19 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
   uint32_t p, a;
   uint32_t d;
 
-  uint32_t pixels = 0;
-
-  // Set up raw pixel dump to entire screen.  Although such writes can wrap
-  // around automatically from end of rect back to beginning, the region is
-  // reset on each frame here in case of an SPI glitch.
-  digitalWrite(eye[e].tft_cs, LOW);
-  tft.startWrite();
-  tft.setAddrWindow(eye[e].xposition, 0, 128, 128);
-
-  // Now just issue raw 16-bit values for every pixel...
+  uint32_t pixelIndex = 0;
 
   scleraXsave = scleraX; // Save initial X value to reset on each line
   irisY       = scleraY - (SCLERA_HEIGHT - IRIS_HEIGHT) / 2;
 
   // Eyelid image is left<>right swapped for two displays
-  uint16_t lidX = 0;
-  uint16_t dlidX = -1;
-  if (e) dlidX = 1;
+  int16_t dlidX = e ? 1 : -1;
+  int16_t lidX = e ? 0 : (SCREEN_WIDTH - 1);
+
   for (screenY = 0; screenY < SCREEN_HEIGHT; screenY++, scleraY++, irisY++) {
     scleraX = scleraXsave;
     irisX   = scleraXsave - (SCLERA_WIDTH - IRIS_WIDTH) / 2;
-    if (e) lidX = 0; else lidX = SCREEN_WIDTH - 1;
+    lidX    = e ? 0 : (SCREEN_WIDTH - 1);
     for (screenX = 0; screenX < SCREEN_WIDTH; screenX++, scleraX++, irisX++, lidX += dlidX) {
       if ((pgm_read_byte(lower + screenY * SCREEN_WIDTH + lidX) <= lT) ||
           (pgm_read_byte(upper + screenY * SCREEN_WIDTH + lidX) <= uT)) {              // Covered by eyelid
@@ -143,30 +173,14 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
           p = pgm_read_word(sclera + scleraY * SCLERA_WIDTH + scleraX);               // Pixel = sclera
         }
       }
-      *(&pbuffer[dmaBuf][0] + pixels++) = p >> 8 | p << 8;
-
-      if (pixels >= BUFFER_SIZE) {
-        yield();
-#ifdef USE_DMA
-        tft.pushPixelsDMA(&pbuffer[dmaBuf][0], pixels);
-        dmaBuf  = !dmaBuf;
-#else
-        tft.pushPixels(pbuffer, pixels);
-#endif
-        pixels = 0;
+      if (pixelIndex < (SCREEN_WIDTH * SCREEN_HEIGHT)) {
+        eyeFrameBuffer[pixelIndex++] = static_cast<uint16_t>(p);
       }
     }
+    yield();
   }
 
-  if (pixels) {
-#ifdef USE_DMA
-    tft.pushPixelsDMA(&pbuffer[dmaBuf][0], pixels);
-#else
-    tft.pushPixels(pbuffer, pixels);
-#endif
-  }
-  tft.endWrite();
-  digitalWrite(eye[e].tft_cs, HIGH);
+  gfx->draw16bitRGBBitmap(eye[e].xposition, 0, eyeFrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT);
 }
 
 // EYE ANIMATION -----------------------------------------------------------
