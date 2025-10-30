@@ -17,9 +17,6 @@ Arduino_DataBus *bus =
     new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TFT_MISO);
 Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, /*rotation=*/0, /*IPS=*/true);
 
-void user_setup(void);
-void user_loop(void);
-
 typedef struct
 {
   int8_t  select;
@@ -30,14 +27,23 @@ typedef struct
 } eyeInfo_t;
 
 #include "config.h"
-#include "eye_functions.h"
 
+#ifdef ENABLE_HYPNO_SPIRAL
+#include "hypno_spiral.h"
+#else
+#include "eye_functions.h"
 uint16_t eyeFrameBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 EyeState eye[NUM_EYES];
+void user_setup(void);
+void user_loop(void);
+#endif
+
 uint32_t startTime = 0;
 
+#ifndef ENABLE_HYPNO_SPIRAL
 void user_setup(void) {}
 void user_loop(void) {}
+#endif
 
 static void waitForSerial()
 {
@@ -74,8 +80,10 @@ void setup()
   digitalWrite(DISPLAY_BACKLIGHT, LOW);
 #endif
 
+#ifndef ENABLE_HYPNO_SPIRAL
   user_setup();
   initEyes();
+#endif
 
 #if defined(ARDUINO_ARCH_ESP32)
   randomSeed(esp_random());
@@ -92,8 +100,12 @@ void setup()
     }
   }
 
+#ifdef ENABLE_HYPNO_SPIRAL
+  gfx->setRotation(0);
+#else
   const uint8_t rotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
   gfx->setRotation(rotation);
+#endif
   Serial.println("GC9A01 init ok");
 
 #if (DISPLAY_BACKLIGHT >= 0)
@@ -110,11 +122,20 @@ void setup()
   }
   gfx->fillScreen(BLACK);
 
+#ifdef ENABLE_HYPNO_SPIRAL
+  hypnoSetup();
+  Serial.println("Hypno spiral initialized");
+#else
   startTime = millis();
   Serial.println("Eye animation initialized");
+#endif
 }
 
 void loop()
 {
+#ifdef ENABLE_HYPNO_SPIRAL
+  hypnoStep();
+#else
   updateEye();
+#endif
 }

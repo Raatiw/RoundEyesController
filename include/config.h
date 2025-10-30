@@ -1,5 +1,31 @@
 #pragma once
 
+// Select which animation to run.
+// Comment out the next line to revert to the original uncanny eye animation.
+#define ENABLE_HYPNO_SPIRAL
+
+// Common display hardware settings -----------------------------------
+#define DISPLAY_WIDTH 240
+#define DISPLAY_HEIGHT 240
+
+// Tie to -1 when the backlight is permanently on (e.g. wired to 3V3).
+#define DISPLAY_BACKLIGHT  -1
+#define BACKLIGHT_MAX    255
+
+#ifdef ENABLE_HYPNO_SPIRAL
+
+// Spiral hypnosis configuration --------------------------------------
+#define HYPNO_PRIMARY_COLOR    0xFFFF  // bright stripe colour (white)
+#define HYPNO_SECONDARY_COLOR  0x0000  // dark stripe colour (black)
+#define HYPNO_BACKGROUND_COLOR 0x0000  // outside the circle
+
+#define HYPNO_STRIPE_COUNT     9.5f    // number of radial bands around the face
+#define HYPNO_TWIST_FACTOR     3.5f    // how aggressively bands spiral outward
+#define HYPNO_PHASE_INCREMENT  320     // rotation speed per frame (larger = faster)
+#define HYPNO_STRIPE_SHIFT     12      // controls band thickness (valid range 8-14)
+
+#else
+
 // GRAPHICS SETTINGS (appearance of eye) -----------------------------------
 
 // Uncomment to use a symmetrical eyelid without a caruncle.
@@ -19,9 +45,6 @@
 // #include "doeEye.h"       // Cartoon deer eye (DISABLE TRACKING)
 
 // DISPLAY HARDWARE SETTINGS (screen type & connections) -------------------
-#define DISPLAY_WIDTH 240
-#define DISPLAY_HEIGHT 240
-
 #define TFT_COUNT 1        // Number of screens (1 or 2)
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32_V2)
   #define TFT1_CS -1       // Managed by Arduino_GFX bus
@@ -40,9 +63,6 @@
 #define EYE_2_XPOSITION  ((DISPLAY_WIDTH - SCREEN_WIDTH) / 2)
 #define EYE_1_YPOSITION  ((DISPLAY_HEIGHT - SCREEN_HEIGHT) / 2)
 #define EYE_2_YPOSITION  ((DISPLAY_HEIGHT - SCREEN_HEIGHT) / 2)
-
-#define DISPLAY_BACKLIGHT  32 // Pin for backlight control (-1 for none)
-#define BACKLIGHT_MAX    255
 
 // EYE LIST ----------------------------------------------------------------
 #define NUM_EYES 1 // Number of eyes to display (1 or 2)
@@ -83,3 +103,5 @@
 #if !defined(IRIS_MAX)
   #define IRIS_MAX      130 // Iris size (0-1023) in darkest light
 #endif
+
+#endif // ENABLE_HYPNO_SPIRAL
