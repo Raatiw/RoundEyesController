@@ -4,7 +4,7 @@
 
 // Select which animation to run (enable at most one).
 // #define ENABLE_HYPNO_SPIRAL
-#define ENABLE_ANIMATED_GIF
+//#define ENABLE_ANIMATED_GIF
 
 #if defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_ANIMATED_GIF)
 #error "Select only one animation mode"
@@ -33,17 +33,37 @@
 
 #elif defined(ENABLE_ANIMATED_GIF)
 
-#undef ANIMATED_GIF_DATA
-#undef ANIMATED_GIF_SIZE
-#undef ANIMATED_GIF_BACKGROUND
-#undef ANIMATED_GIF_DEFAULT_DELAY
-
-//#include "wobble.h"      // Default animation (uncomment exactly one)
- #include "fractal.h"
-
-#ifndef ANIMATED_GIF_DATA
-#error "Animated GIF header must define ANIMATED_GIF_* macros"
+#ifndef ANIMATED_GIF_HEADER
+//#define ANIMATED_GIF_HEADER "wobble.h"
+//#define ANIMATED_GIF_SYMBOL wobble
+// #define ANIMATED_GIF_HEADER "fractal.h"
+// #define ANIMATED_GIF_SYMBOL fractal
+#define ANIMATED_GIF_HEADER "phenakistiscope.h"
+#define ANIMATED_GIF_SYMBOL phenakistiscope
 #endif
+
+#ifndef ANIMATED_GIF_BACKGROUND
+#define ANIMATED_GIF_BACKGROUND 0x0000
+#endif
+
+#ifndef ANIMATED_GIF_DEFAULT_DELAY
+#define ANIMATED_GIF_DEFAULT_DELAY 67
+#endif
+
+#include ANIMATED_GIF_HEADER
+
+struct AnimatedGifResource
+{
+  const uint8_t *data;
+  size_t size;
+};
+
+static constexpr AnimatedGifResource kAnimatedGifResource = {
+    ANIMATED_GIF_SYMBOL,
+    sizeof(ANIMATED_GIF_SYMBOL)};
+
+#undef ANIMATED_GIF_SYMBOL
+#undef ANIMATED_GIF_HEADER
 
 #else
 

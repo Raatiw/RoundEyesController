@@ -23,15 +23,7 @@ uint16_t lastFrameDelay = ANIMATED_GIF_DEFAULT_DELAY;
 constexpr uint16_t CANVAS_WIDTH = DISPLAY_WIDTH;
 constexpr uint16_t CANVAS_HEIGHT = DISPLAY_HEIGHT;
 
-#ifndef ANIMATED_GIF_BACKGROUND
-#define ANIMATED_GIF_BACKGROUND 0x0000
-#endif
-
-#ifndef ANIMATED_GIF_DEFAULT_DELAY
-#define ANIMATED_GIF_DEFAULT_DELAY 67
-#endif
-
-static_assert(ANIMATED_GIF_SIZE > 0, "Animated GIF resource must not be empty");
+static_assert(kAnimatedGifResource.size > 0, "Animated GIF resource must not be empty");
 
 void blitRun(int16_t x, int16_t y, int16_t length)
 {
@@ -154,8 +146,8 @@ void animatedGifSetup()
 
   gfx->fillScreen(ANIMATED_GIF_BACKGROUND);
 
-  const uint8_t *gifData = reinterpret_cast<const uint8_t *>(ANIMATED_GIF_DATA);
-  if (!gif.openFLASH(const_cast<uint8_t *>(gifData), static_cast<int>(ANIMATED_GIF_SIZE), GIFDraw))
+  const uint8_t *gifData = reinterpret_cast<const uint8_t *>(kAnimatedGifResource.data);
+  if (!gif.openFLASH(const_cast<uint8_t *>(gifData), static_cast<int>(kAnimatedGifResource.size), GIFDraw))
   {
     Serial.println("Animated GIF: failed to open memory resource");
     gifReady = false;

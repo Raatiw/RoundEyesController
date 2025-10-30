@@ -44,7 +44,12 @@ Animation selection lives in `include/config.h`:
   - `HYPNO_STRIPE_DUTY` controls the bright/dark ratio of each arm.
   - `HYPNO_PHASE_INCREMENT` sets the rotation speed (higher = faster).
 
-- Enable the in-flash GIF player by defining `ENABLE_ANIMATED_GIF`. Include exactly one GIF header inside the animated GIF section (for example `wobble.h` or `fractal.h`). Each header must provide `ANIMATED_GIF_DATA`, `ANIMATED_GIF_SIZE`, and optional background/delay macros. The `AnimatedGIF` decoder streams directly from PROGMEM, so even compressed GIFs play without touching LittleFS.
+- Enable the in-flash GIF player by defining `ENABLE_ANIMATED_GIF`. Pick the header and symbol via macros in `config.h`, e.g.
+  ```c++
+  #define ANIMATED_GIF_HEADER "fractal.h"
+  #define ANIMATED_GIF_SYMBOL fractal
+  ```
+  (defaults point at `wobble.h`). `ANIMATED_GIF_BACKGROUND` and `ANIMATED_GIF_DEFAULT_DELAY` can also be overridden if a clip needs special settings.
 
 - Comment out `#define ENABLE_HYPNO_SPIRAL` to restore the uncanny-eye animation. In that mode the large sprite headers in `include/` (for example `defaultEye.h`, `catEye.h`, etc.) provide the artwork. Pick the eye style you want by enabling the corresponding `#include` near the top of `config.h`.
 
