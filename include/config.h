@@ -4,9 +4,12 @@
 
 // Select which animation to run (enable at most one).
 // #define ENABLE_HYPNO_SPIRAL
-#define ENABLE_WOBBLE_SCREEN
+//#define ENABLE_WOBBLE_SCREEN
+#define ENABLE_FRACTAL_SCREEN
 
-#if defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_WOBBLE_SCREEN)
+#if (defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_WOBBLE_SCREEN)) ||      \
+    (defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_FRACTAL_SCREEN)) ||      \
+    (defined(ENABLE_WOBBLE_SCREEN) && defined(ENABLE_FRACTAL_SCREEN))
 #error "Select only one animation mode"
 #endif
 
@@ -35,13 +38,19 @@
 
 #include "wobble.h"
 
-#define BITMAP_ANIM_WIDTH         WOBBLE_WIDTH
-#define BITMAP_ANIM_HEIGHT        WOBBLE_HEIGHT
-#define BITMAP_ANIM_FRAME_COUNT   WOBBLE_FRAME_COUNT
-#define BITMAP_ANIM_FRAME_DATA    wobbleFrames
-#define BITMAP_ANIM_DELAY_DATA    wobbleDelays
-#define BITMAP_ANIM_BACKGROUND    0x0000
-#define BITMAP_ANIM_DEFAULT_DELAY 67
+#define GIF_MEMORY_DATA           wobble
+#define GIF_MEMORY_SIZE           (sizeof(wobble))
+#define GIF_MEMORY_BACKGROUND     0x0000
+#define GIF_MEMORY_DEFAULT_DELAY  67
+
+#elif defined(ENABLE_FRACTAL_SCREEN)
+
+#include "fractal.h"
+
+#define GIF_MEMORY_DATA           fractal
+#define GIF_MEMORY_SIZE           (sizeof(fractal))
+#define GIF_MEMORY_BACKGROUND     0x0000
+#define GIF_MEMORY_DEFAULT_DELAY  67
 
 #else
 
