@@ -1,8 +1,10 @@
 #pragma once
 
+#include "eye_types.h"
+
 // Select which animation to run.
 // Comment out the next line to revert to the original uncanny eye animation.
-#define ENABLE_HYPNO_SPIRAL
+//#define ENABLE_HYPNO_SPIRAL
 
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
@@ -73,12 +75,12 @@
 #define RH_WINK_PIN -1 // Right wink pin (set to -1 for no pin)
 
 #if (NUM_EYES == 2)
-  eyeInfo_t eyeInfo[] = {
+  static eyeInfo_t eyeInfo[] = {
     { TFT1_CS, LH_WINK_PIN, TFT_1_ROT, EYE_1_XPOSITION, EYE_1_YPOSITION }, // LEFT EYE
     { TFT2_CS, RH_WINK_PIN, TFT_2_ROT, EYE_2_XPOSITION, EYE_2_YPOSITION }, // RIGHT EYE
   };
 #else
-  eyeInfo_t eyeInfo[] = {
+  static eyeInfo_t eyeInfo[] = {
     { TFT1_CS, LH_WINK_PIN, TFT_1_ROT, EYE_1_XPOSITION, EYE_1_YPOSITION }, // SINGLE EYE
   };
 #endif

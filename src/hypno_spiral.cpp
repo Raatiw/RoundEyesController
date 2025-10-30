@@ -11,6 +11,13 @@
 
 #include "config.h"
 
+#if !defined(ENABLE_HYPNO_SPIRAL)
+
+void hypnoSetup() {}
+void hypnoStep() {}
+
+#else
+
 extern Arduino_GFX *gfx;
 
 namespace
@@ -137,3 +144,5 @@ void hypnoStep()
 
   gfx->draw16bitRGBBitmap(0, 0, spiralBuffer, WIDTH, HEIGHT);
 }
+
+#endif // ENABLE_HYPNO_SPIRAL

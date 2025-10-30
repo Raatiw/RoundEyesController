@@ -5,6 +5,8 @@
 #include <esp_random.h>
 #endif
 
+#include "eye_types.h"
+
 // SPI wiring between the Adafruit Feather ESP32 V2 and the GC9A01 display.
 static constexpr uint8_t TFT_SCK = SCK;               // GPIO5
 static constexpr uint8_t TFT_MOSI = MOSI;             // GPIO19
@@ -17,16 +19,12 @@ Arduino_DataBus *bus =
     new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TFT_MISO);
 Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, /*rotation=*/0, /*IPS=*/true);
 
-typedef struct
-{
-  int8_t  select;
-  int8_t  wink;
-  uint8_t rotation;
-  int16_t xposition;
-  int16_t yposition;
-} eyeInfo_t;
-
 #include "config.h"
+
+#ifndef ENABLE_HYPNO_SPIRAL
+void user_setup(void);
+void user_loop(void);
+#endif
 
 #ifdef ENABLE_HYPNO_SPIRAL
 #include "hypno_spiral.h"
