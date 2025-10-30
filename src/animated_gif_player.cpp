@@ -1,4 +1,4 @@
-#include "wobble_render.h"
+#include "animated_gif_player.h"
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
@@ -6,7 +6,7 @@
 
 #include "config.h"
 
-#if defined(ENABLE_WOBBLE_SCREEN) || defined(ENABLE_FRACTAL_SCREEN)
+#if defined(ENABLE_ANIMATED_GIF)
 
 extern Arduino_GFX *gfx;
 
@@ -17,19 +17,21 @@ bool gifReady = false;
 int16_t offsetX = 0;
 int16_t offsetY = 0;
 uint16_t lineBuffer[DISPLAY_WIDTH];
-
-static_assert(GIF_MEMORY_SIZE > 0, "GIF memory resource must not be empty");
+uint32_t lastFrameMillis = 0;
+uint16_t lastFrameDelay = ANIMATED_GIF_DEFAULT_DELAY;
 
 constexpr uint16_t CANVAS_WIDTH = DISPLAY_WIDTH;
 constexpr uint16_t CANVAS_HEIGHT = DISPLAY_HEIGHT;
 
-#ifndef GIF_MEMORY_BACKGROUND
-#define GIF_MEMORY_BACKGROUND 0x0000
+#ifndef ANIMATED_GIF_BACKGROUND
+#define ANIMATED_GIF_BACKGROUND 0x0000
 #endif
 
-#ifndef GIF_MEMORY_DEFAULT_DELAY
-#define GIF_MEMORY_DEFAULT_DELAY 67
+#ifndef ANIMATED_GIF_DEFAULT_DELAY
+#define ANIMATED_GIF_DEFAULT_DELAY 67
 #endif
+
+static_assert(ANIMATED_GIF_SIZE > 0, "Animated GIF resource must not be empty");
 
 void blitRun(int16_t x, int16_t y, int16_t length)
 {
@@ -53,7 +55,7 @@ void GIFDraw(GIFDRAW *pDraw)
 
   if (x < 0)
   {
-    int16_t delta = static_cast<int16_t>(-x);
+    const int16_t delta = static_cast<int16_t>(-x);
     x = 0;
     width -= delta;
     pDraw->pPixels += delta;
@@ -146,48 +148,67 @@ void GIFDraw(GIFDRAW *pDraw)
 }
 } // namespace
 
-void wobbleSetup()
+void animatedGifSetup()
 {
   gif.begin(LITTLE_ENDIAN_PIXELS);
 
-  gfx->fillScreen(GIF_MEMORY_BACKGROUND);
+  gfx->fillScreen(ANIMATED_GIF_BACKGROUND);
 
-  const uint8_t *gifData = reinterpret_cast<const uint8_t *>(GIF_MEMORY_DATA);
-  if (!gif.openFLASH(const_cast<uint8_t *>(gifData), static_cast<int>(GIF_MEMORY_SIZE), GIFDraw))
+  const uint8_t *gifData = reinterpret_cast<const uint8_t *>(ANIMATED_GIF_DATA);
+  if (!gif.openFLASH(const_cast<uint8_t *>(gifData), static_cast<int>(ANIMATED_GIF_SIZE), GIFDraw))
   {
-    Serial.println("GIF: failed to open memory resource");
+    Serial.println("Animated GIF: failed to open memory resource");
     gifReady = false;
     return;
   }
 
-  int canvasWidth = gif.getCanvasWidth();
-  int canvasHeight = gif.getCanvasHeight();
+  const int canvasWidth = gif.getCanvasWidth();
+  const int canvasHeight = gif.getCanvasHeight();
 
   offsetX = (CANVAS_WIDTH > canvasWidth) ? static_cast<int16_t>((CANVAS_WIDTH - canvasWidth) / 2) : 0;
   offsetY = (CANVAS_HEIGHT > canvasHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - canvasHeight) / 2) : 0;
 
+  lastFrameMillis = millis();
+  lastFrameDelay = 0;
   gifReady = true;
 }
 
-void wobbleLoop()
+void animatedGifLoop()
 {
   if (!gifReady)
   {
     return;
   }
 
-  int result = gif.playFrame(true, nullptr);
-  if (result < 0)
+  const uint32_t now = millis();
+  if (now - lastFrameMillis < lastFrameDelay)
   {
-    Serial.printf("GIF: playback error %d\n", gif.getLastError());
-    gifReady = false;
     return;
   }
+
+  int delayMs = 0;
+  const int result = gif.playFrame(false, &delayMs);
+  if (result < 0)
+  {
+    Serial.printf("Animated GIF: playback error %d\n", gif.getLastError());
+    gifReady = false;
+    gif.close();
+    return;
+  }
+
+  if (delayMs <= 0)
+  {
+    delayMs = ANIMATED_GIF_DEFAULT_DELAY;
+  }
+
+  lastFrameDelay = static_cast<uint16_t>(delayMs);
+  lastFrameMillis = now;
 
   if (result == 0)
   {
     gif.reset();
+    lastFrameDelay = 0;
   }
 }
 
-#endif // ENABLE_WOBBLE_SCREEN || ENABLE_FRACTAL_SCREEN
+#endif // ENABLE_ANIMATED_GIF

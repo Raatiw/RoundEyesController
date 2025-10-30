@@ -21,13 +21,13 @@ Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, /*rotation=*/0, /*IPS=*/true
 
 #include "config.h"
 
-#if !defined(ENABLE_WOBBLE_SCREEN) && !defined(ENABLE_HYPNO_SPIRAL)
+#if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
 void user_setup(void);
 void user_loop(void);
 #endif
 
-#if defined(ENABLE_WOBBLE_SCREEN)
-#include "wobble_render.h"
+#if defined(ENABLE_ANIMATED_GIF)
+#include "animated_gif_player.h"
 #elif defined(ENABLE_HYPNO_SPIRAL)
 #include "hypno_spiral.h"
 #else
@@ -38,7 +38,7 @@ EyeState eye[NUM_EYES];
 
 uint32_t startTime = 0;
 
-#if !defined(ENABLE_WOBBLE_SCREEN) && !defined(ENABLE_HYPNO_SPIRAL)
+#if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
 void user_setup(void) {}
 void user_loop(void) {}
 #endif
@@ -78,7 +78,7 @@ void setup()
   digitalWrite(DISPLAY_BACKLIGHT, LOW);
 #endif
 
-#if !defined(ENABLE_WOBBLE_SCREEN) && !defined(ENABLE_HYPNO_SPIRAL)
+#if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
   user_setup();
   initEyes();
 #endif
@@ -98,7 +98,7 @@ void setup()
     }
   }
 
-#if defined(ENABLE_WOBBLE_SCREEN) || defined(ENABLE_HYPNO_SPIRAL)
+#if defined(ENABLE_ANIMATED_GIF) || defined(ENABLE_HYPNO_SPIRAL)
   gfx->setRotation(0);
 #else
   const uint8_t rotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
@@ -120,9 +120,9 @@ void setup()
   }
   gfx->fillScreen(BLACK);
 
-#if defined(ENABLE_WOBBLE_SCREEN)
-  wobbleSetup();
-  Serial.println("Wobble art initialized");
+#if defined(ENABLE_ANIMATED_GIF)
+  animatedGifSetup();
+  Serial.println("Animated GIF initialized");
 #elif defined(ENABLE_HYPNO_SPIRAL)
   hypnoSetup();
   Serial.println("Hypno spiral initialized");
@@ -134,8 +134,8 @@ void setup()
 
 void loop()
 {
-#if defined(ENABLE_WOBBLE_SCREEN)
-  wobbleLoop();
+#if defined(ENABLE_ANIMATED_GIF)
+  animatedGifLoop();
 #elif defined(ENABLE_HYPNO_SPIRAL)
   hypnoStep();
 #else
