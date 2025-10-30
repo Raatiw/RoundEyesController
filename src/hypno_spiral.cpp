@@ -68,6 +68,8 @@ void hypnoSetup()
   const float cy = (static_cast<float>(HEIGHT) - 1.0f) * 0.5f;
   const float maxRadius = 0.5f * static_cast<float>(WIDTH < HEIGHT ? WIDTH : HEIGHT);
   const float invMaxRadius = (maxRadius > 0.0f) ? (1.0f / maxRadius) : 0.0f;
+  const float radiusExponent = HYPNO_RADIUS_EXPONENT;
+  const bool applyRadiusExponent = fabsf(radiusExponent - 1.0f) > 1e-5f;
 
   for (uint16_t y = 0; y < HEIGHT; ++y)
   {
@@ -87,10 +89,13 @@ void hypnoSetup()
       }
 
       const float normalizedRadius = radius * invMaxRadius; // 0..1
-      float angle = atan2f(fy, fx);                         // -pi..pi
-      angle = (angle + PI) / (2.0f * PI);                   // 0..1
+      const float easedRadius =
+          applyRadiusExponent ? powf(normalizedRadius, radiusExponent) : normalizedRadius;
 
-      float combined = angle * HYPNO_STRIPE_COUNT + normalizedRadius * HYPNO_TWIST_FACTOR;
+      float angle = atan2f(fy, fx); // -pi..pi
+      angle = (angle + PI) / (2.0f * PI); // 0..1
+
+      float combined = angle * HYPNO_STRIPE_COUNT + easedRadius * HYPNO_TWIST_FACTOR;
       combined = combined - floorf(combined); // keep fractional part in [0,1)
       phaseMap[index] = static_cast<uint16_t>(combined * 65535.0f);
     }
@@ -104,7 +109,18 @@ void hypnoStep()
     return;
   }
 
-  phaseOffset += static_cast<uint16_t>(HYPNO_PHASE_INCREMENT);
+  phaseOffset = static_cast<uint16_t>(phaseOffset + HYPNO_PHASE_INCREMENT);
+
+  float duty = HYPNO_STRIPE_DUTY;
+  if (duty < 0.0f)
+  {
+    duty = 0.0f;
+  }
+  else if (duty > 1.0f)
+  {
+    duty = 1.0f;
+  }
+  const uint16_t dutyThreshold = static_cast<uint16_t>(duty * 65535.0f);
 
   for (size_t i = 0; i < PIXEL_COUNT; ++i)
   {
@@ -114,9 +130,9 @@ void hypnoStep()
       continue;
     }
 
-    const uint16_t value = phaseMap[i] + phaseOffset;
-    const uint8_t stripe = (value >> HYPNO_STRIPE_SHIFT) & 0x1;
-    spiralBuffer[i] = stripe ? HYPNO_PRIMARY_COLOR : HYPNO_SECONDARY_COLOR;
+    const uint16_t value = static_cast<uint16_t>(phaseMap[i] + phaseOffset);
+    const bool stripeOn = value < dutyThreshold;
+    spiralBuffer[i] = stripeOn ? HYPNO_PRIMARY_COLOR : HYPNO_SECONDARY_COLOR;
   }
 
   gfx->draw16bitRGBBitmap(0, 0, spiralBuffer, WIDTH, HEIGHT);

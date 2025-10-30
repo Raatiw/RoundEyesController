@@ -38,10 +38,11 @@ Animation selection lives in `include/config.h`:
 
 - Enable the spiral hypnosis renderer by leaving `#define ENABLE_HYPNO_SPIRAL` uncommented. The look and feel can be tuned with the `HYPNO_*` constants:
   - `HYPNO_PRIMARY_COLOR`, `HYPNO_SECONDARY_COLOR`, `HYPNO_BACKGROUND_COLOR` control the 16‑bit RGB565 palette.
-  - `HYPNO_STRIPE_COUNT` adjusts how many bright/dark bands appear.
-  - `HYPNO_TWIST_FACTOR` changes how aggressively the bands spiral as they move outward.
+  - `HYPNO_STRIPE_COUNT` adjusts how many bright/dark arms orbit the centre.
+  - `HYPNO_TWIST_FACTOR` changes how tightly the bands spiral from centre to edge.
+  - `HYPNO_RADIUS_EXPONENT` eases the stripe spacing toward the middle (values < 1 tighten the centre).
+  - `HYPNO_STRIPE_DUTY` controls the bright/dark ratio of each arm.
   - `HYPNO_PHASE_INCREMENT` sets the rotation speed (higher = faster).
-  - `HYPNO_STRIPE_SHIFT` affects band thickness (smaller makes wider stripes).
 
 - Comment out `#define ENABLE_HYPNO_SPIRAL` to restore the uncanny-eye animation. In that mode the large sprite headers in `include/` (for example `defaultEye.h`, `catEye.h`, etc.) provide the artwork. Pick the eye style you want by enabling the corresponding `#include` near the top of `config.h`.
 
