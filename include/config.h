@@ -33,7 +33,15 @@
 
 #elif defined(ENABLE_WOBBLE_SCREEN)
 
-// Wobble art mode relies on data embedded in wobble.h. No extra config needed.
+#include "wobble.h"
+
+#define BITMAP_ANIM_WIDTH         WOBBLE_WIDTH
+#define BITMAP_ANIM_HEIGHT        WOBBLE_HEIGHT
+#define BITMAP_ANIM_FRAME_COUNT   WOBBLE_FRAME_COUNT
+#define BITMAP_ANIM_FRAME_DATA    wobbleFrames
+#define BITMAP_ANIM_DELAY_DATA    wobbleDelays
+#define BITMAP_ANIM_BACKGROUND    0x0000
+#define BITMAP_ANIM_DEFAULT_DELAY 67
 
 #else
 
