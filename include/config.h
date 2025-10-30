@@ -2,9 +2,13 @@
 
 #include "eye_types.h"
 
-// Select which animation to run.
-// Comment out the next line to revert to the original uncanny eye animation.
-//#define ENABLE_HYPNO_SPIRAL
+// Select which animation to run (enable at most one).
+// #define ENABLE_HYPNO_SPIRAL
+#define ENABLE_WOBBLE_SCREEN
+
+#if defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_WOBBLE_SCREEN)
+#error "Select only one animation mode"
+#endif
 
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
@@ -14,7 +18,7 @@
 #define DISPLAY_BACKLIGHT  -1
 #define BACKLIGHT_MAX    255
 
-#ifdef ENABLE_HYPNO_SPIRAL
+#if defined(ENABLE_HYPNO_SPIRAL)
 
 // Spiral hypnosis configuration --------------------------------------
 #define HYPNO_PRIMARY_COLOR     0xFFFF // bright stripe colour (white)
@@ -26,6 +30,10 @@
 #define HYPNO_RADIUS_EXPONENT   0.85f  // radial easing (<1 tightens the centre)
 #define HYPNO_STRIPE_DUTY       0.58f  // bright stripe proportion (0-1 range)
 #define HYPNO_PHASE_INCREMENT   6512    // rotation speed per frame (larger = faster)
+
+#elif defined(ENABLE_WOBBLE_SCREEN)
+
+// Wobble art mode relies on data embedded in wobble.h. No extra config needed.
 
 #else
 
@@ -107,4 +115,4 @@
   #define IRIS_MAX      130 // Iris size (0-1023) in darkest light
 #endif
 
-#endif // ENABLE_HYPNO_SPIRAL
+#endif
