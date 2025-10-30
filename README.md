@@ -51,6 +51,8 @@ Animation selection lives in `include/config.h`:
   ```
   (defaults point at `wobble.h`). `ANIMATED_GIF_BACKGROUND` and `ANIMATED_GIF_DEFAULT_DELAY` can also be overridden if a clip needs special settings.
 
+- Toggle `ENABLE_EYELIDS` if you want the procedural eyelids and blinking to render. Comment it out to keep the full eye surface visible at all times.
+
 - Comment out `#define ENABLE_HYPNO_SPIRAL` to restore the uncanny-eye animation. In that mode the large sprite headers in `include/` (for example `defaultEye.h`, `catEye.h`, etc.) provide the artwork. Pick the eye style you want by enabling the corresponding `#include` near the top of `config.h`.
 
 ## Creating Custom Eye Sprites

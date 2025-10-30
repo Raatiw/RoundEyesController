@@ -150,17 +150,25 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
   scleraXsave = scleraX; // Save initial X value to reset on each line
   irisY       = scleraY - (SCLERA_HEIGHT - IRIS_HEIGHT) / 2;
 
+#if defined(ENABLE_EYELIDS)
   // Eyelid image is left<>right swapped for two displays
   int16_t dlidX = e ? 1 : -1;
   int16_t lidX = e ? 0 : (SCREEN_WIDTH - 1);
+#endif
 
   for (screenY = 0; screenY < SCREEN_HEIGHT; screenY++, scleraY++, irisY++) {
     scleraX = scleraXsave;
     irisX   = scleraXsave - (SCLERA_WIDTH - IRIS_WIDTH) / 2;
+#if defined(ENABLE_EYELIDS)
     lidX    = e ? 0 : (SCREEN_WIDTH - 1);
-    for (screenX = 0; screenX < SCREEN_WIDTH; screenX++, scleraX++, irisX++, lidX += dlidX) {
-      if ((pgm_read_byte(lower + screenY * SCREEN_WIDTH + lidX) <= lT) ||
-          (pgm_read_byte(upper + screenY * SCREEN_WIDTH + lidX) <= uT)) {              // Covered by eyelid
+#endif
+    for (screenX = 0; screenX < SCREEN_WIDTH; screenX++, scleraX++, irisX++) {
+      bool eyelidMasked = false;
+#if defined(ENABLE_EYELIDS)
+      eyelidMasked = (pgm_read_byte(lower + screenY * SCREEN_WIDTH + lidX) <= lT) ||
+                     (pgm_read_byte(upper + screenY * SCREEN_WIDTH + lidX) <= uT);
+#endif
+      if (eyelidMasked) {
         p = 0;
       } else if ((irisY < 0) || (irisY >= IRIS_HEIGHT) ||
                  (irisX < 0) || (irisX >= IRIS_WIDTH)) { // In sclera
@@ -178,6 +186,9 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
       if (pixelIndex < (SCREEN_WIDTH * SCREEN_HEIGHT)) {
         eyeFrameBuffer[pixelIndex++] = static_cast<uint16_t>(p);
       }
+#if defined(ENABLE_EYELIDS)
+      lidX += dlidX;
+#endif
     }
     yield();
   }
@@ -372,8 +383,11 @@ void frame(uint16_t iScale) // Iris scale (0-1023)
   // track the pupil (eyes tend to open only as much as needed -- e.g. look
   // down and the upper eyelid drops).  Just sample a point in the upper
   // lid map slightly above the pupil to determine the rendering threshold.
+  uint8_t n = 0;
+  uint8_t lThresholdValue = 0;
+#if defined(ENABLE_EYELIDS)
   static uint8_t uThreshold = 128;
-  uint8_t        lThreshold, n;
+  uint8_t        lThreshold;
 #ifdef TRACKING
   int16_t sampleX = SCLERA_WIDTH  / 2 - (eyeX / 2), // Reduce X influence
           sampleY = SCLERA_HEIGHT / 2 - (eyeY + IRIS_HEIGHT / 4);
@@ -401,9 +415,11 @@ void frame(uint16_t iScale) // Iris scale (0-1023)
   } else {
     n          = uThreshold;
   }
+  lThresholdValue = lThreshold;
+#endif
 
   // Pass all the derived values to the eye-rendering function:
-  drawEye(eyeIndex, iScale, eyeX, eyeY, n, lThreshold);
+  drawEye(eyeIndex, iScale, eyeX, eyeY, n, lThresholdValue);
 
   if (eyeIndex == (NUM_EYES - 1)) {
     user_loop(); // Call user code after rendering last eye

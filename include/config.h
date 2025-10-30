@@ -6,6 +6,8 @@
 // #define ENABLE_HYPNO_SPIRAL
 //#define ENABLE_ANIMATED_GIF
 
+
+
 #if defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_ANIMATED_GIF)
 #error "Select only one animation mode"
 #endif
@@ -129,6 +131,7 @@ static constexpr AnimatedGifResource kAnimatedGifResource = {
 // #define JOYSTICK_Y_PIN A1 // Analog pin for eye vert position (")
 // #define JOYSTICK_X_FLIP   // If defined, reverse stick X axis
 // #define JOYSTICK_Y_FLIP   // If defined, reverse stick Y axis
+//#define ENABLE_EYELIDS     // If defined, render eyelids and blinking
 #define TRACKING            // If defined, eyelid tracks pupil
 #define AUTOBLINK           // If defined, eyes also blink autonomously
 
