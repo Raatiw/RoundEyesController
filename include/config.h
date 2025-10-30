@@ -19,11 +19,11 @@
 #define HYPNO_SECONDARY_COLOR   0x0000 // dark stripe colour (black)
 #define HYPNO_BACKGROUND_COLOR  0x0000 // outside the circle
 
-#define HYPNO_STRIPE_COUNT      6.0f   // number of bright arms around the centre
-#define HYPNO_TWIST_FACTOR      12.0f  // amount of angular twist from centre to rim
+#define HYPNO_STRIPE_COUNT      3.0f   // number of bright arms around the centre
+#define HYPNO_TWIST_FACTOR      5.0f  // amount of angular twist from centre to rim
 #define HYPNO_RADIUS_EXPONENT   0.85f  // radial easing (<1 tightens the centre)
-#define HYPNO_STRIPE_DUTY       0.50f  // bright stripe proportion (0-1 range)
-#define HYPNO_PHASE_INCREMENT   320    // rotation speed per frame (larger = faster)
+#define HYPNO_STRIPE_DUTY       0.58f  // bright stripe proportion (0-1 range)
+#define HYPNO_PHASE_INCREMENT   6512    // rotation speed per frame (larger = faster)
 
 #else
 
