@@ -6,6 +6,10 @@
 
 #include "config.h"
 
+#if defined(ANIMATED_GIF_USE_SD)
+#include <SD.h>
+#endif
+
 #if defined(ENABLE_ANIMATED_GIF)
 
 extern Arduino_GFX *gfx;
@@ -23,7 +27,18 @@ uint16_t lastFrameDelay = ANIMATED_GIF_DEFAULT_DELAY;
 constexpr uint16_t CANVAS_WIDTH = DISPLAY_WIDTH;
 constexpr uint16_t CANVAS_HEIGHT = DISPLAY_HEIGHT;
 
+#if !defined(ANIMATED_GIF_USE_SD)
 static_assert(kAnimatedGifResource.size > 0, "Animated GIF resource must not be empty");
+#endif
+
+#if defined(ANIMATED_GIF_USE_SD)
+constexpr uint32_t kGifSwitchIntervalMs = ANIMATED_GIF_SWITCH_INTERVAL_MS;
+const char *const kGifFiles[] = ANIMATED_GIF_FILES;
+constexpr size_t kGifFileCount = sizeof(kGifFiles) / sizeof(kGifFiles[0]);
+size_t currentGifIndex = 0;
+uint32_t lastSwitchMillis = 0;
+File gifFile;
+#endif
 
 void blitRun(int16_t x, int16_t y, int16_t length)
 {
@@ -138,6 +153,124 @@ void GIFDraw(GIFDRAW *pDraw)
     }
   }
 }
+
+#if defined(ANIMATED_GIF_USE_SD)
+void *GIFOpenFile(const char *szFilename, int32_t *pFileSize)
+{
+  gifFile.close();
+  gifFile = SD.open(szFilename, FILE_READ);
+  if (!gifFile)
+  {
+    return nullptr;
+  }
+  *pFileSize = static_cast<int32_t>(gifFile.size());
+  return static_cast<void *>(&gifFile);
+}
+
+void GIFCloseFile(void *pHandle)
+{
+  File *file = static_cast<File *>(pHandle);
+  if (file)
+  {
+    file->close();
+  }
+}
+
+int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen)
+{
+  File *file = static_cast<File *>(pFile->fHandle);
+  if (!file)
+  {
+    return 0;
+  }
+
+  int32_t bytesToRead = iLen;
+  if ((pFile->iSize - pFile->iPos) < iLen)
+  {
+    bytesToRead = pFile->iSize - pFile->iPos;
+  }
+  if (bytesToRead <= 0)
+  {
+    return 0;
+  }
+
+  const int32_t bytesRead = static_cast<int32_t>(file->read(pBuf, bytesToRead));
+  pFile->iPos += bytesRead;
+  return bytesRead;
+}
+
+int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition)
+{
+  if (iPosition < 0)
+  {
+    iPosition = 0;
+  }
+  else if (iPosition >= pFile->iSize)
+  {
+    iPosition = pFile->iSize - 1;
+  }
+
+  File *file = static_cast<File *>(pFile->fHandle);
+  if (!file)
+  {
+    return 0;
+  }
+
+  file->seek(iPosition);
+  pFile->iPos = iPosition;
+  return iPosition;
+}
+
+bool openGifAtIndex(size_t index)
+{
+  gif.close();
+  gifReady = false;
+
+  if (index >= kGifFileCount)
+  {
+    return false;
+  }
+
+  const char *filename = kGifFiles[index];
+  if (!gif.open(filename, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw))
+  {
+    Serial.printf("Animated GIF: failed to open %s\n", filename);
+    return false;
+  }
+
+  const int canvasWidth = gif.getCanvasWidth();
+  const int canvasHeight = gif.getCanvasHeight();
+
+  offsetX = (CANVAS_WIDTH > canvasWidth) ? static_cast<int16_t>((CANVAS_WIDTH - canvasWidth) / 2) : 0;
+  offsetY = (CANVAS_HEIGHT > canvasHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - canvasHeight) / 2) : 0;
+
+  lastFrameMillis = millis();
+  lastFrameDelay = 0;
+  lastSwitchMillis = lastFrameMillis;
+  gifReady = true;
+  return true;
+}
+
+bool openNextGif()
+{
+  if (kGifFileCount == 0)
+  {
+    return false;
+  }
+
+  for (size_t attempt = 0; attempt < kGifFileCount; ++attempt)
+  {
+    const size_t index = (currentGifIndex + attempt) % kGifFileCount;
+    if (openGifAtIndex(index))
+    {
+      currentGifIndex = index;
+      return true;
+    }
+  }
+
+  return false;
+}
+#endif
 } // namespace
 
 void animatedGifSetup()
@@ -146,6 +279,15 @@ void animatedGifSetup()
 
   gfx->fillScreen(ANIMATED_GIF_BACKGROUND);
 
+#if defined(ANIMATED_GIF_USE_SD)
+  currentGifIndex = 0;
+  if (!openNextGif())
+  {
+    Serial.println("Animated GIF: no SD GIF files opened");
+    gifReady = false;
+    return;
+  }
+#else
   const uint8_t *gifData = reinterpret_cast<const uint8_t *>(kAnimatedGifResource.data);
   if (!gif.openFLASH(const_cast<uint8_t *>(gifData), static_cast<int>(kAnimatedGifResource.size), GIFDraw))
   {
@@ -163,6 +305,7 @@ void animatedGifSetup()
   lastFrameMillis = millis();
   lastFrameDelay = 0;
   gifReady = true;
+#endif
 }
 
 void animatedGifLoop()
@@ -173,6 +316,19 @@ void animatedGifLoop()
   }
 
   const uint32_t now = millis();
+
+#if defined(ANIMATED_GIF_USE_SD)
+  if (kGifFileCount > 1 && kGifSwitchIntervalMs > 0 &&
+      (now - lastSwitchMillis) >= kGifSwitchIntervalMs)
+  {
+    currentGifIndex = (currentGifIndex + 1) % kGifFileCount;
+    if (openNextGif())
+    {
+      return;
+    }
+  }
+#endif
+
   if (now - lastFrameMillis < lastFrameDelay)
   {
     return;

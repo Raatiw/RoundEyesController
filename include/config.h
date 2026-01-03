@@ -37,15 +37,35 @@
 
 #elif defined(ENABLE_ANIMATED_GIF)
 
-#ifndef ANIMATED_GIF_HEADER
-#define ANIMATED_GIF_HEADER "wobble.h"
-#define ANIMATED_GIF_SYMBOL wobble
-//#define ANIMATED_GIF_HEADER "fractal.h"
-//#define ANIMATED_GIF_SYMBOL fractal
-//#define ANIMATED_GIF_HEADER "phenakistiscope.h"
-// #define ANIMATED_GIF_SYMBOL phenakistiscope
-// #define ANIMATED_GIF_HEADER "tunnel.h"
-// #define ANIMATED_GIF_SYMBOL tunnel
+// Enable SD-backed GIF playback instead of PROGMEM assets.
+#define ANIMATED_GIF_USE_SD
+
+// SD card configuration.
+#ifndef SD_CS_PIN
+#define SD_CS_PIN 32
+#endif
+
+// GIF files to cycle through on the SD card (root directory by default).
+#ifndef ANIMATED_GIF_FILES
+#define ANIMATED_GIF_FILES { "/wobble.gif", "/fractal.gif", "/phenakistiscope.gif", "/tunnel.gif" }
+#endif
+
+// Switch to the next GIF every N milliseconds.
+#ifndef ANIMATED_GIF_SWITCH_INTERVAL_MS
+#define ANIMATED_GIF_SWITCH_INTERVAL_MS 10000
+#endif
+
+#if !defined(ANIMATED_GIF_USE_SD)
+  #ifndef ANIMATED_GIF_HEADER
+  #define ANIMATED_GIF_HEADER "wobble.h"
+  #define ANIMATED_GIF_SYMBOL wobble
+  //#define ANIMATED_GIF_HEADER "fractal.h"
+  //#define ANIMATED_GIF_SYMBOL fractal
+  //#define ANIMATED_GIF_HEADER "phenakistiscope.h"
+  // #define ANIMATED_GIF_SYMBOL phenakistiscope
+  // #define ANIMATED_GIF_HEADER "tunnel.h"
+  // #define ANIMATED_GIF_SYMBOL tunnel
+  #endif
 #endif
 
 #ifndef ANIMATED_GIF_BACKGROUND
@@ -56,20 +76,22 @@
 #define ANIMATED_GIF_DEFAULT_DELAY 67
 #endif
 
-#include ANIMATED_GIF_HEADER
+#if !defined(ANIMATED_GIF_USE_SD)
+  #include ANIMATED_GIF_HEADER
 
-struct AnimatedGifResource
-{
-  const uint8_t *data;
-  size_t size;
-};
+  struct AnimatedGifResource
+  {
+    const uint8_t *data;
+    size_t size;
+  };
 
-static constexpr AnimatedGifResource kAnimatedGifResource = {
-    ANIMATED_GIF_SYMBOL,
-    sizeof(ANIMATED_GIF_SYMBOL)};
+  static constexpr AnimatedGifResource kAnimatedGifResource = {
+      ANIMATED_GIF_SYMBOL,
+      sizeof(ANIMATED_GIF_SYMBOL)};
 
-#undef ANIMATED_GIF_SYMBOL
-#undef ANIMATED_GIF_HEADER
+  #undef ANIMATED_GIF_SYMBOL
+  #undef ANIMATED_GIF_HEADER
+#endif
 
 #else
 

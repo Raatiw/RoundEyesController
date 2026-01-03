@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
+#include <SD.h>
+#include <SPI.h>
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include <esp_random.h>
@@ -10,9 +12,8 @@
 // SPI wiring between the Adafruit Feather ESP32 V2 and the GC9A01 display.
 static constexpr uint8_t TFT_SCK = SCK;               // GPIO5
 static constexpr uint8_t TFT_MOSI = MOSI;             // GPIO19
-static constexpr uint8_t TFT_MISO = GFX_NOT_DEFINED;  // Unused
-//static constexpr uint8_t TFT_CS = 33;                 // GPIO33 (D10 / SS)
-static constexpr uint8_t TFT_CS = 37;                 // GPIO33 (D10 / SS)
+static constexpr uint8_t TFT_MISO = MISO;             // Shared SPI MISO (used by SD)
+static constexpr uint8_t TFT_CS = 33;                 // GPIO33 (D10 / SS)
 static constexpr uint8_t TFT_DC = 26;                 // GPIO26 (A0)
 static constexpr uint8_t TFT_RST = 25;                // GPIO25 (A1)
 
@@ -21,6 +22,10 @@ Arduino_DataBus *bus =
 Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, /*rotation=*/0, /*IPS=*/true);
 
 #include "config.h"
+
+#if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
+static constexpr uint8_t SD_CS = SD_CS_PIN;
+#endif
 
 #if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
 void user_setup(void);
@@ -64,6 +69,10 @@ void setup()
 
   pinMode(TFT_CS, OUTPUT);
   digitalWrite(TFT_CS, HIGH); // keep deselected until init
+#if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH); // keep SD deselected until init
+#endif
   pinMode(TFT_DC, OUTPUT);
   digitalWrite(TFT_DC, HIGH);
   pinMode(TFT_RST, OUTPUT);
@@ -77,6 +86,18 @@ void setup()
 #if (DISPLAY_BACKLIGHT >= 0)
   pinMode(DISPLAY_BACKLIGHT, OUTPUT);
   digitalWrite(DISPLAY_BACKLIGHT, LOW);
+#endif
+
+#if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
+  SPI.begin(SCK, MISO, MOSI, SD_CS);
+  if (!SD.begin(SD_CS))
+  {
+    Serial.println("SD init failed");
+  }
+  else
+  {
+    Serial.println("SD init ok");
+  }
 #endif
 
 #if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
