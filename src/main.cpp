@@ -11,7 +11,8 @@
 static constexpr uint8_t TFT_SCK = SCK;               // GPIO5
 static constexpr uint8_t TFT_MOSI = MOSI;             // GPIO19
 static constexpr uint8_t TFT_MISO = GFX_NOT_DEFINED;  // Unused
-static constexpr uint8_t TFT_CS = 33;                 // GPIO33 (D10 / SS)
+//static constexpr uint8_t TFT_CS = 33;                 // GPIO33 (D10 / SS)
+static constexpr uint8_t TFT_CS = 37;                 // GPIO33 (D10 / SS)
 static constexpr uint8_t TFT_DC = 26;                 // GPIO26 (A0)
 static constexpr uint8_t TFT_RST = 25;                // GPIO25 (A1)
 
@@ -99,10 +100,10 @@ void setup()
   }
 
 #if defined(ENABLE_ANIMATED_GIF) || defined(ENABLE_HYPNO_SPIRAL)
-  gfx->setRotation(0);
+  gfx->setRotation(DISPLAY_ROTATION);
 #else
-  const uint8_t rotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
-  gfx->setRotation(rotation);
+  const uint8_t baseRotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
+  gfx->setRotation(static_cast<uint8_t>((baseRotation + DISPLAY_ROTATION) & 0x03));
 #endif
   Serial.println("GC9A01 init ok");
 

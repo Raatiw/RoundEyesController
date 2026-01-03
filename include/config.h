@@ -4,7 +4,7 @@
 
 // Select which animation to run (enable at most one).
 // #define ENABLE_HYPNO_SPIRAL
-//#define ENABLE_ANIMATED_GIF
+#define ENABLE_ANIMATED_GIF
 
 
 
@@ -15,6 +15,8 @@
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 240
+#define DISPLAY_ROTATION 0 // 0=default, 1=90°, 2=180°, 3=270°
+#define DISPLAY_ROTATION 0
 
 // Tie to -1 when the backlight is permanently on (e.g. wired to 3V3).
 #define DISPLAY_BACKLIGHT  -1
@@ -36,12 +38,14 @@
 #elif defined(ENABLE_ANIMATED_GIF)
 
 #ifndef ANIMATED_GIF_HEADER
-//#define ANIMATED_GIF_HEADER "wobble.h"
-//#define ANIMATED_GIF_SYMBOL wobble
-// #define ANIMATED_GIF_HEADER "fractal.h"
-// #define ANIMATED_GIF_SYMBOL fractal
-#define ANIMATED_GIF_HEADER "phenakistiscope.h"
-#define ANIMATED_GIF_SYMBOL phenakistiscope
+#define ANIMATED_GIF_HEADER "wobble.h"
+#define ANIMATED_GIF_SYMBOL wobble
+//#define ANIMATED_GIF_HEADER "fractal.h"
+//#define ANIMATED_GIF_SYMBOL fractal
+//#define ANIMATED_GIF_HEADER "phenakistiscope.h"
+// #define ANIMATED_GIF_SYMBOL phenakistiscope
+// #define ANIMATED_GIF_HEADER "tunnel.h"
+// #define ANIMATED_GIF_SYMBOL tunnel
 #endif
 
 #ifndef ANIMATED_GIF_BACKGROUND
@@ -75,7 +79,7 @@ static constexpr AnimatedGifResource kAnimatedGifResource = {
 // #define SYMMETRICAL_EYELID
 
 // Enable ONE of these includes -- HUGE graphics tables for various eyes:
-#include "defaultEye.h"      // Standard human-ish hazel eye -OR-
+//#include "defaultEye.h"      // Standard human-ish hazel eye -OR-
 // #include "bigEye.h"       // Custom big eye -OR-
 // #include "dragonEye.h"    // Slit pupil fiery dragon/demon eye -OR-
 // #include "noScleraEye.h"  // Large iris, no sclera -OR-
@@ -131,7 +135,7 @@ static constexpr AnimatedGifResource kAnimatedGifResource = {
 // #define JOYSTICK_Y_PIN A1 // Analog pin for eye vert position (")
 // #define JOYSTICK_X_FLIP   // If defined, reverse stick X axis
 // #define JOYSTICK_Y_FLIP   // If defined, reverse stick Y axis
-//#define ENABLE_EYELIDS     // If defined, render eyelids and blinking
+#define ENABLE_EYELIDS     // If defined, render eyelids and blinking
 #define TRACKING            // If defined, eyelid tracks pupil
 #define AUTOBLINK           // If defined, eyes also blink autonomously
 
