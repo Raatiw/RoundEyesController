@@ -40,6 +40,15 @@ uint32_t lastSwitchMillis = 0;
 File gifFile;
 #endif
 
+void resetGifTiming()
+{
+  lastFrameMillis = millis();
+  lastFrameDelay = 0;
+#if defined(ANIMATED_GIF_USE_SD)
+  lastSwitchMillis = lastFrameMillis;
+#endif
+}
+
 void blitRun(int16_t x, int16_t y, int16_t length)
 {
   if (length <= 0)
@@ -244,9 +253,7 @@ bool openGifAtIndex(size_t index)
   offsetX = (CANVAS_WIDTH > canvasWidth) ? static_cast<int16_t>((CANVAS_WIDTH - canvasWidth) / 2) : 0;
   offsetY = (CANVAS_HEIGHT > canvasHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - canvasHeight) / 2) : 0;
 
-  lastFrameMillis = millis();
-  lastFrameDelay = 0;
-  lastSwitchMillis = lastFrameMillis;
+  resetGifTiming();
   gifReady = true;
   return true;
 }
@@ -302,8 +309,7 @@ void animatedGifSetup()
   offsetX = (CANVAS_WIDTH > canvasWidth) ? static_cast<int16_t>((CANVAS_WIDTH - canvasWidth) / 2) : 0;
   offsetY = (CANVAS_HEIGHT > canvasHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - canvasHeight) / 2) : 0;
 
-  lastFrameMillis = millis();
-  lastFrameDelay = 0;
+  resetGifTiming();
   gifReady = true;
 #endif
 }
@@ -317,7 +323,7 @@ void animatedGifLoop()
 
   const uint32_t now = millis();
 
-#if defined(ANIMATED_GIF_USE_SD)
+#if defined(ANIMATED_GIF_USE_SD) && !defined(ANIMATED_GIF_DISABLE_AUTO_SWITCH)
   if (kGifFileCount > 1 && kGifSwitchIntervalMs > 0 &&
       (now - lastSwitchMillis) >= kGifSwitchIntervalMs)
   {
@@ -357,6 +363,31 @@ void animatedGifLoop()
     gif.reset();
     lastFrameDelay = 0;
   }
+}
+
+size_t animatedGifFileCount()
+{
+#if defined(ANIMATED_GIF_USE_SD)
+  return kGifFileCount;
+#else
+  return 1;
+#endif
+}
+
+bool animatedGifOpenAtIndex(size_t index)
+{
+#if defined(ANIMATED_GIF_USE_SD)
+  return openGifAtIndex(index);
+#else
+  if (index != 0 || !gifReady)
+  {
+    return false;
+  }
+
+  gif.reset();
+  resetGifTiming();
+  return true;
+#endif
 }
 
 #endif // ENABLE_ANIMATED_GIF

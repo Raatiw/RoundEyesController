@@ -2,14 +2,13 @@
 
 #include "eye_types.h"
 
-// Select which animation to run (enable at most one).
+// Select which animation to run.
 // #define ENABLE_HYPNO_SPIRAL
 #define ENABLE_ANIMATED_GIF
+#define ENABLE_EYE_PROGRAM // Include the eye animation in the program loop.
 
-
-
-#if defined(ENABLE_HYPNO_SPIRAL) && defined(ENABLE_ANIMATED_GIF)
-#error "Select only one animation mode"
+#if defined(ENABLE_HYPNO_SPIRAL) && (defined(ENABLE_ANIMATED_GIF) || defined(ENABLE_EYE_PROGRAM))
+#error "Select only one animation family"
 #endif
 
 // Common display hardware settings -----------------------------------
@@ -35,7 +34,9 @@
 #define HYPNO_STRIPE_DUTY       0.58f  // bright stripe proportion (0-1 range)
 #define HYPNO_PHASE_INCREMENT   6512    // rotation speed per frame (larger = faster)
 
-#elif defined(ENABLE_ANIMATED_GIF)
+#endif
+
+#if defined(ENABLE_ANIMATED_GIF)
 
 // Enable SD-backed GIF playback instead of PROGMEM assets.
 #define ANIMATED_GIF_USE_SD
@@ -50,9 +51,13 @@
 #define ANIMATED_GIF_FILES { "/wobble.gif", "/fractal.gif", "/phenakistiscope.gif", "/tunnel.gif" }
 #endif
 
-// Switch to the next GIF every N milliseconds.
+// Switch to the next program every N milliseconds.
 #ifndef ANIMATED_GIF_SWITCH_INTERVAL_MS
 #define ANIMATED_GIF_SWITCH_INTERVAL_MS 10000
+#endif
+
+#if defined(ENABLE_EYE_PROGRAM)
+#define ANIMATED_GIF_DISABLE_AUTO_SWITCH
 #endif
 
 #if !defined(ANIMATED_GIF_USE_SD)
@@ -93,7 +98,9 @@
   #undef ANIMATED_GIF_HEADER
 #endif
 
-#else
+#endif
+
+#if defined(ENABLE_EYE_PROGRAM) || (!defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL))
 
 // GRAPHICS SETTINGS (appearance of eye) -----------------------------------
 
@@ -101,7 +108,7 @@
 // #define SYMMETRICAL_EYELID
 
 // Enable ONE of these includes -- HUGE graphics tables for various eyes:
-//#include "defaultEye.h"      // Standard human-ish hazel eye -OR-
+#include "defaultEye.h"      // Standard human-ish hazel eye -OR-
 // #include "bigEye.h"       // Custom big eye -OR-
 // #include "dragonEye.h"    // Slit pupil fiery dragon/demon eye -OR-
 // #include "noScleraEye.h"  // Large iris, no sclera -OR-
@@ -165,6 +172,10 @@
 #define LIGHT_CURVE  0.33 // Light sensor adjustment curve
 #define LIGHT_MIN       0 // Minimum useful reading from light sensor
 #define LIGHT_MAX    1023 // Maximum useful reading from sensor
+
+#ifndef EYE_BACKGROUND_COLOR
+#define EYE_BACKGROUND_COLOR 0x0000
+#endif
 
 #define IRIS_SMOOTH         // If enabled, filter input from IRIS_PIN
 #if !defined(IRIS_MIN)      // Each eye might have its own MIN/MAX

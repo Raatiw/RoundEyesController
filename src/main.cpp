@@ -23,20 +23,28 @@ Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, /*rotation=*/0, /*IPS=*/true
 
 #include "config.h"
 
+#if defined(ENABLE_EYE_PROGRAM) || (!defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL))
+#define ENABLE_EYE_ANIMATION
+#endif
+
 #if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
 static constexpr uint8_t SD_CS = SD_CS_PIN;
 #endif
 
-#if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
+#if defined(ENABLE_EYE_ANIMATION)
 void user_setup(void);
 void user_loop(void);
 #endif
 
 #if defined(ENABLE_ANIMATED_GIF)
 #include "animated_gif_player.h"
-#elif defined(ENABLE_HYPNO_SPIRAL)
+#endif
+
+#if defined(ENABLE_HYPNO_SPIRAL)
 #include "hypno_spiral.h"
-#else
+#endif
+
+#if defined(ENABLE_EYE_ANIMATION)
 #include "eye_functions.h"
 uint16_t eyeFrameBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 EyeState eye[NUM_EYES];
@@ -44,9 +52,60 @@ EyeState eye[NUM_EYES];
 
 uint32_t startTime = 0;
 
-#if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
+#if defined(ENABLE_EYE_ANIMATION)
 void user_setup(void) {}
 void user_loop(void) {}
+#endif
+
+#if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
+namespace
+{
+enum class ProgramMode
+{
+  Gif,
+  Eye
+};
+
+ProgramMode currentProgram = ProgramMode::Gif;
+size_t gifProgramCount = 0;
+size_t programIndex = 0;
+uint32_t programStartMs = 0;
+uint8_t eyeBaseRotation = 0;
+
+void setProgramRotation(ProgramMode mode)
+{
+  if (mode == ProgramMode::Eye)
+  {
+    gfx->setRotation(static_cast<uint8_t>((eyeBaseRotation + DISPLAY_ROTATION) & 0x03));
+  }
+  else
+  {
+    gfx->setRotation(DISPLAY_ROTATION);
+  }
+}
+
+void enterProgram(size_t index)
+{
+  const size_t programCount = (gifProgramCount > 0) ? (gifProgramCount + 1) : 1;
+  programIndex = (programCount > 0) ? (index % programCount) : 0;
+  programStartMs = millis();
+
+  if (gifProgramCount > 0 && programIndex < gifProgramCount)
+  {
+    currentProgram = ProgramMode::Gif;
+    setProgramRotation(currentProgram);
+    gfx->fillScreen(ANIMATED_GIF_BACKGROUND);
+    animatedGifOpenAtIndex(programIndex);
+  }
+  else
+  {
+    currentProgram = ProgramMode::Eye;
+    setProgramRotation(currentProgram);
+    gfx->fillScreen(EYE_BACKGROUND_COLOR);
+    startTime = millis();
+  }
+}
+} // namespace
 #endif
 
 static void waitForSerial()
@@ -100,9 +159,12 @@ void setup()
   }
 #endif
 
-#if !defined(ENABLE_ANIMATED_GIF) && !defined(ENABLE_HYPNO_SPIRAL)
+#if defined(ENABLE_EYE_ANIMATION)
   user_setup();
   initEyes();
+#if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
+  eyeBaseRotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
+#endif
 #endif
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -120,7 +182,9 @@ void setup()
     }
   }
 
-#if defined(ENABLE_ANIMATED_GIF) || defined(ENABLE_HYPNO_SPIRAL)
+#if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
+  gfx->setRotation(DISPLAY_ROTATION);
+#elif defined(ENABLE_ANIMATED_GIF) || defined(ENABLE_HYPNO_SPIRAL)
   gfx->setRotation(DISPLAY_ROTATION);
 #else
   const uint8_t baseRotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
@@ -145,6 +209,10 @@ void setup()
 #if defined(ENABLE_ANIMATED_GIF)
   animatedGifSetup();
   Serial.println("Animated GIF initialized");
+#if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
+  gifProgramCount = animatedGifFileCount();
+  enterProgram(0);
+#endif
 #elif defined(ENABLE_HYPNO_SPIRAL)
   hypnoSetup();
   Serial.println("Hypno spiral initialized");
@@ -156,7 +224,23 @@ void setup()
 
 void loop()
 {
-#if defined(ENABLE_ANIMATED_GIF)
+#if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
+  const uint32_t now = millis();
+  if (ANIMATED_GIF_SWITCH_INTERVAL_MS > 0 &&
+      (now - programStartMs) >= ANIMATED_GIF_SWITCH_INTERVAL_MS)
+  {
+    enterProgram(programIndex + 1);
+  }
+
+  if (currentProgram == ProgramMode::Eye)
+  {
+    updateEye();
+  }
+  else
+  {
+    animatedGifLoop();
+  }
+#elif defined(ENABLE_ANIMATED_GIF)
   animatedGifLoop();
 #elif defined(ENABLE_HYPNO_SPIRAL)
   hypnoStep();
