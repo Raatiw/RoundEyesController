@@ -45,8 +45,9 @@ void user_loop(void);
 #endif
 
 #if defined(ENABLE_EYE_ANIMATION)
+#include "eye_assets.h"
 #include "eye_functions.h"
-uint16_t eyeFrameBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+uint16_t eyeFrameBuffer[EYE_FRAMEBUFFER_PIXELS];
 EyeState eye[NUM_EYES];
 #endif
 
@@ -68,6 +69,7 @@ enum class ProgramMode
 
 ProgramMode currentProgram = ProgramMode::Gif;
 size_t gifProgramCount = 0;
+size_t eyeProgramCount = 0;
 size_t programIndex = 0;
 uint32_t programStartMs = 0;
 uint8_t eyeBaseRotation = 0;
@@ -84,10 +86,28 @@ void setProgramRotation(ProgramMode mode)
   }
 }
 
+void fallbackToDefaultEye()
+{
+  currentProgram = ProgramMode::Eye;
+  setProgramRotation(currentProgram);
+  gfx->fillScreen(EYE_BACKGROUND_COLOR);
+  const EyeAsset *asset = getEyeAsset(0);
+  if (asset)
+  {
+    setActiveEye(asset);
+    Serial.printf("Eye asset (fallback): %s\n", asset->name ? asset->name : "unknown");
+  }
+  startTime = millis();
+}
+
 void enterProgram(size_t index)
 {
-  const size_t programCount = (gifProgramCount > 0) ? (gifProgramCount + 1) : 1;
-  programIndex = (programCount > 0) ? (index % programCount) : 0;
+  const size_t programCount = gifProgramCount + eyeProgramCount;
+  if (programCount == 0)
+  {
+    return;
+  }
+  programIndex = index % programCount;
   programStartMs = millis();
 
   if (gifProgramCount > 0 && programIndex < gifProgramCount)
@@ -95,13 +115,23 @@ void enterProgram(size_t index)
     currentProgram = ProgramMode::Gif;
     setProgramRotation(currentProgram);
     gfx->fillScreen(ANIMATED_GIF_BACKGROUND);
-    animatedGifOpenAtIndex(programIndex);
+    if (!animatedGifOpenAtIndex(programIndex))
+    {
+      fallbackToDefaultEye();
+    }
   }
   else
   {
     currentProgram = ProgramMode::Eye;
     setProgramRotation(currentProgram);
     gfx->fillScreen(EYE_BACKGROUND_COLOR);
+    const size_t eyeIndex = programIndex - gifProgramCount;
+    const EyeAsset *asset = getEyeAsset(eyeIndex);
+    if (asset)
+    {
+      setActiveEye(asset);
+      Serial.printf("Eye asset: %s\n", asset->name ? asset->name : "unknown");
+    }
     startTime = millis();
   }
 }
@@ -162,6 +192,7 @@ void setup()
 #if defined(ENABLE_EYE_ANIMATION)
   user_setup();
   initEyes();
+  setActiveEye(activeEye);
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   eyeBaseRotation = (NUM_EYES > 0) ? eye[0].rotation : 0;
 #endif
@@ -211,6 +242,7 @@ void setup()
   Serial.println("Animated GIF initialized");
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   gifProgramCount = animatedGifFileCount();
+  eyeProgramCount = eyeAssetCount();
   enterProgram(0);
 #endif
 #elif defined(ENABLE_HYPNO_SPIRAL)
@@ -239,6 +271,10 @@ void loop()
   else
   {
     animatedGifLoop();
+    if (!animatedGifIsReady())
+    {
+      fallbackToDefaultEye();
+    }
   }
 #elif defined(ENABLE_ANIMATED_GIF)
   animatedGifLoop();

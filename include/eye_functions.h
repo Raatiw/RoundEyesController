@@ -9,13 +9,15 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 
+#include "eye_assets.h"
+
 #ifndef USBSerial
 #define USBSerial Serial
 #endif
 
 extern Arduino_GFX *gfx;
 extern uint32_t startTime;
-extern uint16_t eyeFrameBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+extern uint16_t eyeFrameBuffer[EYE_FRAMEBUFFER_PIXELS];
 
 void frame(uint16_t iScale);
 void split(int16_t startValue, int16_t endValue, uint32_t startTimeValue,
@@ -63,8 +65,27 @@ extern EyeState eye[NUM_EYES];
 #if !defined(LIGHT_PIN) || (LIGHT_PIN < 0)
 // Autonomous iris motion uses a fractal behavior to similate both the major
 // reaction of the eye plus the continuous smaller adjustments that occur.
-uint16_t oldIris = (IRIS_MIN + IRIS_MAX) / 2, newIris;
+uint16_t oldIris = 0;
+uint16_t newIris = 0;
 #endif
+
+static bool irisValueNeedsReset = true;
+
+void setActiveEye(const EyeAsset *asset)
+{
+  if (!asset)
+  {
+    return;
+  }
+
+  activeEye = asset;
+#if !defined(LIGHT_PIN) || (LIGHT_PIN < 0)
+  const uint16_t mid = static_cast<uint16_t>((asset->irisMin + asset->irisMax) / 2);
+  oldIris = mid;
+  newIris = mid;
+#endif
+  irisValueNeedsReset = true;
+}
 
 // Initialise eyes ---------------------------------------------------------
 void initEyes(void)
@@ -98,6 +119,14 @@ void initEyes(void)
 // UPDATE EYE --------------------------------------------------------------
 void updateEye (void)
 {
+  if (!activeEye)
+  {
+    return;
+  }
+
+  const uint16_t irisMin = activeEye->irisMin;
+  const uint16_t irisMax = activeEye->irisMax;
+
 #if defined(LIGHT_PIN) && (LIGHT_PIN >= 0) // Interactive iris
 
   int16_t v = analogRead(LIGHT_PIN);       // Raw dial/photocell reading
@@ -111,10 +140,15 @@ void updateEye (void)
   v = (int16_t)(pow((double)v / (double)(LIGHT_MAX - LIGHT_MIN),
                     LIGHT_CURVE) * (double)(LIGHT_MAX - LIGHT_MIN));
 #endif
-  // And scale to iris range (IRIS_MAX is size at LIGHT_MIN)
-  v = map(v, 0, (LIGHT_MAX - LIGHT_MIN), IRIS_MAX, IRIS_MIN);
+  // And scale to iris range (irisMax is size at LIGHT_MIN)
+  v = map(v, 0, (LIGHT_MAX - LIGHT_MIN), irisMax, irisMin);
 #ifdef IRIS_SMOOTH // Filter input (gradual motion)
-  static int16_t irisValue = (IRIS_MIN + IRIS_MAX) / 2;
+  static int16_t irisValue = 0;
+  if (irisValueNeedsReset)
+  {
+    irisValue = static_cast<int16_t>((irisMin + irisMax) / 2);
+    irisValueNeedsReset = false;
+  }
   irisValue = ((irisValue * 15) + v) / 16;
   frame(irisValue);
 #else // Unfiltered (immediate motion)
@@ -123,8 +157,8 @@ void updateEye (void)
 
 #else  // Autonomous iris scaling -- invoke recursive function
 
-  newIris = random(IRIS_MIN, IRIS_MAX);
-  split(oldIris, newIris, micros(), 10000000L, IRIS_MAX - IRIS_MIN);
+  newIris = random(irisMin, irisMax);
+  split(oldIris, newIris, micros(), 10000000L, irisMax - irisMin);
   oldIris = newIris;
 
 #endif // LIGHT_PIN
@@ -140,6 +174,32 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
   uint32_t  uT,      // Upper eyelid threshold value
   uint32_t  lT) {    // Lower eyelid threshold value
 
+  if (!activeEye)
+  {
+    return;
+  }
+
+  const EyeAsset *asset = activeEye;
+  const uint16_t scleraWidth = asset->scleraWidth;
+  const uint16_t scleraHeight = asset->scleraHeight;
+  const uint16_t irisMapWidth = asset->irisMapWidth;
+  const uint16_t irisMapHeight = asset->irisMapHeight;
+  const uint16_t irisWidth = asset->irisWidth;
+  const uint16_t irisHeight = asset->irisHeight;
+  const uint16_t screenWidth = asset->screenWidth;
+  const uint16_t screenHeight = asset->screenHeight;
+  const uint16_t *scleraPixels = asset->sclera;
+  const uint16_t *irisPixels = asset->iris;
+  const uint16_t *polarMap = asset->polar;
+  const uint8_t *upperLid = asset->upper;
+  const uint8_t *lowerLid = asset->lower;
+  const uint32_t screenPixels = static_cast<uint32_t>(screenWidth) * screenHeight;
+
+  if (screenPixels > static_cast<uint32_t>(EYE_FRAMEBUFFER_PIXELS))
+  {
+    return;
+  }
+
   uint32_t  screenX, screenY, scleraXsave;
   int32_t  irisX, irisY;
   uint32_t p, a;
@@ -148,42 +208,42 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
   uint32_t pixelIndex = 0;
 
   scleraXsave = scleraX; // Save initial X value to reset on each line
-  irisY       = scleraY - (SCLERA_HEIGHT - IRIS_HEIGHT) / 2;
+  irisY       = scleraY - (scleraHeight - irisHeight) / 2;
 
 #if defined(ENABLE_EYELIDS)
   // Eyelid image is left<>right swapped for two displays
   int16_t dlidX = e ? 1 : -1;
-  int16_t lidX = e ? 0 : (SCREEN_WIDTH - 1);
+  int16_t lidX = e ? 0 : (screenWidth - 1);
 #endif
 
-  for (screenY = 0; screenY < SCREEN_HEIGHT; screenY++, scleraY++, irisY++) {
+  for (screenY = 0; screenY < screenHeight; screenY++, scleraY++, irisY++) {
     scleraX = scleraXsave;
-    irisX   = scleraXsave - (SCLERA_WIDTH - IRIS_WIDTH) / 2;
+    irisX   = scleraXsave - (scleraWidth - irisWidth) / 2;
 #if defined(ENABLE_EYELIDS)
-    lidX    = e ? 0 : (SCREEN_WIDTH - 1);
+    lidX    = e ? 0 : (screenWidth - 1);
 #endif
-    for (screenX = 0; screenX < SCREEN_WIDTH; screenX++, scleraX++, irisX++) {
+    for (screenX = 0; screenX < screenWidth; screenX++, scleraX++, irisX++) {
       bool eyelidMasked = false;
 #if defined(ENABLE_EYELIDS)
-      eyelidMasked = (pgm_read_byte(lower + screenY * SCREEN_WIDTH + lidX) <= lT) ||
-                     (pgm_read_byte(upper + screenY * SCREEN_WIDTH + lidX) <= uT);
+      eyelidMasked = (pgm_read_byte(lowerLid + screenY * screenWidth + lidX) <= lT) ||
+                     (pgm_read_byte(upperLid + screenY * screenWidth + lidX) <= uT);
 #endif
       if (eyelidMasked) {
         p = 0;
-      } else if ((irisY < 0) || (irisY >= IRIS_HEIGHT) ||
-                 (irisX < 0) || (irisX >= IRIS_WIDTH)) { // In sclera
-        p = pgm_read_word(sclera + scleraY * SCLERA_WIDTH + scleraX);
+      } else if ((irisY < 0) || (irisY >= irisHeight) ||
+                 (irisX < 0) || (irisX >= irisWidth)) { // In sclera
+        p = pgm_read_word(scleraPixels + scleraY * scleraWidth + scleraX);
       } else {                                          // Maybe iris...
-        p = pgm_read_word(polar + irisY * IRIS_WIDTH + irisX);                        // Polar angle/dist
+        p = pgm_read_word(polarMap + irisY * irisWidth + irisX);                        // Polar angle/dist
         d = (iScale * (p & 0x7F)) / 128;                // Distance (Y)
-        if (d < IRIS_MAP_HEIGHT) {                      // Within iris area
-          a = (IRIS_MAP_WIDTH * (p >> 7)) / 512;        // Angle (X)
-          p = pgm_read_word(iris + d * IRIS_MAP_WIDTH + a);                           // Pixel = iris
+        if (d < irisMapHeight) {                      // Within iris area
+          a = (irisMapWidth * (p >> 7)) / 512;        // Angle (X)
+          p = pgm_read_word(irisPixels + d * irisMapWidth + a);                           // Pixel = iris
         } else {                                        // Not in iris
-          p = pgm_read_word(sclera + scleraY * SCLERA_WIDTH + scleraX);               // Pixel = sclera
+          p = pgm_read_word(scleraPixels + scleraY * scleraWidth + scleraX);               // Pixel = sclera
         }
       }
-      if (pixelIndex < (SCREEN_WIDTH * SCREEN_HEIGHT)) {
+      if (pixelIndex < screenPixels) {
         eyeFrameBuffer[pixelIndex++] = static_cast<uint16_t>(p);
       }
 #if defined(ENABLE_EYELIDS)
@@ -193,7 +253,7 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
     yield();
   }
 
-  gfx->draw16bitRGBBitmap(eye[e].xposition, eye[e].yposition, eyeFrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT);
+  gfx->draw16bitRGBBitmap(eye[e].xposition, eye[e].yposition, eyeFrameBuffer, screenWidth, screenHeight);
 }
 
 // EYE ANIMATION -----------------------------------------------------------
@@ -228,6 +288,18 @@ void frame(uint16_t iScale) // Iris scale (0-1023)
   static uint8_t  eyeIndex = 0; // eye[] array counter
   int16_t         eyeX, eyeY;
   uint32_t        t = micros(); // Time at start of function
+
+  if (!activeEye)
+  {
+    return;
+  }
+
+  const EyeAsset *asset = activeEye;
+  const uint16_t scleraWidth = asset->scleraWidth;
+  const uint16_t scleraHeight = asset->scleraHeight;
+  const uint16_t irisHeight = asset->irisHeight;
+  const uint16_t screenWidth = asset->screenWidth;
+  const uint16_t screenHeight = asset->screenHeight;
 
   if (!(++frames & 255)) { // Every 256 frames...
     float elapsed = (millis() - startTime) / 1000.0;
@@ -365,8 +437,8 @@ void frame(uint16_t iScale) // Iris scale (0-1023)
   // Process motion, blinking and iris scale into renderable values
 
   // Scale eye X/Y positions (0-1023) to pixel units used by drawEye()
-  eyeX = map(eyeX, 0, 1023, 0, SCLERA_WIDTH  - 128);
-  eyeY = map(eyeY, 0, 1023, 0, SCLERA_HEIGHT - 128);
+  eyeX = map(eyeX, 0, 1023, 0, scleraWidth  - screenWidth);
+  eyeY = map(eyeY, 0, 1023, 0, scleraHeight - screenHeight);
 
   // Horizontal position is offset so that eyes are very slightly crossed
   // to appear fixated (converged) at a conversational distance.  Number
@@ -376,7 +448,7 @@ void frame(uint16_t iScale) // Iris scale (0-1023)
     if (eyeIndex == 1) eyeX += 4;
     else eyeX -= 4;
   }
-  if (eyeX > (SCLERA_WIDTH - 128)) eyeX = (SCLERA_WIDTH - 128);
+  if (eyeX > (scleraWidth - screenWidth)) eyeX = (scleraWidth - screenWidth);
 
   // Eyelids are rendered using a brightness threshold image.  This same
   // map can be used to simplify another problem: making the upper eyelid
@@ -389,12 +461,12 @@ void frame(uint16_t iScale) // Iris scale (0-1023)
   static uint8_t uThreshold = 128;
   uint8_t        lThreshold;
 #ifdef TRACKING
-  int16_t sampleX = SCLERA_WIDTH  / 2 - (eyeX / 2), // Reduce X influence
-          sampleY = SCLERA_HEIGHT / 2 - (eyeY + IRIS_HEIGHT / 4);
+  int16_t sampleX = scleraWidth  / 2 - (eyeX / 2), // Reduce X influence
+          sampleY = scleraHeight / 2 - (eyeY + irisHeight / 4);
   // Eyelid is slightly asymmetrical, so two readings are taken, averaged
   if (sampleY < 0) n = 0;
-  else            n = (pgm_read_byte(upper + sampleY * SCREEN_WIDTH + sampleX) +
-                         pgm_read_byte(upper + sampleY * SCREEN_WIDTH + (SCREEN_WIDTH - 1 - sampleX))) / 2;
+  else            n = (pgm_read_byte(asset->upper + sampleY * screenWidth + sampleX) +
+                         pgm_read_byte(asset->upper + sampleY * screenWidth + (screenWidth - 1 - sampleX))) / 2;
   uThreshold = (uThreshold * 3 + n) / 4; // Filter/soften motion
   // Lower eyelid doesn't track the same way, but seems to be pulled upward
   // by tension from the upper lid.
@@ -440,6 +512,14 @@ void split( // Subdivides motion path into two sub-paths w/randimization
   int32_t  duration,   // Start-to-end time, in microseconds
   int16_t  range) {    // Allowable scale value variance when subdividing
 
+  if (!activeEye)
+  {
+    return;
+  }
+
+  const uint16_t irisMin = activeEye->irisMin;
+  const uint16_t irisMax = activeEye->irisMax;
+
   if (range >= 8) {    // Limit subdvision count, because recursion
     range    /= 2;     // Split range & time in half for subdivision,
     duration /= 2;     // then pick random center point within range:
@@ -452,8 +532,8 @@ void split( // Subdivides motion path into two sub-paths w/randimization
     int16_t v;         // Interim value
     while ((dt = (micros() - startTime)) < duration) {
       v = startValue + (((endValue - startValue) * dt) / duration);
-      if (v < IRIS_MIN)      v = IRIS_MIN; // Clip just in case
-      else if (v > IRIS_MAX) v = IRIS_MAX;
+      if (v < irisMin)      v = irisMin; // Clip just in case
+      else if (v > irisMax) v = irisMax;
       frame(v);        // Draw frame w/interim iris scale value
     }
   }

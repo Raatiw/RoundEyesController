@@ -390,4 +390,9 @@ bool animatedGifOpenAtIndex(size_t index)
 #endif
 }
 
+bool animatedGifIsReady()
+{
+  return gifReady;
+}
+
 #endif // ENABLE_ANIMATED_GIF

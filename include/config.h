@@ -14,8 +14,7 @@
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 240
-#define DISPLAY_ROTATION 0 // 0=default, 1=90°, 2=180°, 3=270°
-#define DISPLAY_ROTATION 0
+#define DISPLAY_ROTATION 2 // 0=default, 1=90°, 2=180°, 3=270°
 
 // Tie to -1 when the backlight is permanently on (e.g. wired to 3V3).
 #define DISPLAY_BACKLIGHT  -1
@@ -48,7 +47,7 @@
 
 // GIF files to cycle through on the SD card (root directory by default).
 #ifndef ANIMATED_GIF_FILES
-#define ANIMATED_GIF_FILES { "/wobble.gif", "/fractal.gif", "/phenakistiscope.gif", "/tunnel.gif" }
+#define ANIMATED_GIF_FILES { "/wobble.gif", "/fractal.gif", "/phenakistiscope.gif", "/tunnel.gif", "/hearth.gif" }
 #endif
 
 // Switch to the next program every N milliseconds.
@@ -107,8 +106,9 @@
 // Uncomment to use a symmetrical eyelid without a caruncle.
 // #define SYMMETRICAL_EYELID
 
-// Enable ONE of these includes -- HUGE graphics tables for various eyes:
-#include "defaultEye.h"      // Standard human-ish hazel eye -OR-
+// Eye sprite headers are compiled via src/eye_asset_*.cpp.
+// Keep this list as a reference for available styles.
+// #include "defaultEye.h"      // Standard human-ish hazel eye -OR-
 // #include "bigEye.h"       // Custom big eye -OR-
 // #include "dragonEye.h"    // Slit pupil fiery dragon/demon eye -OR-
 // #include "noScleraEye.h"  // Large iris, no sclera -OR-
@@ -119,6 +119,15 @@
 // #include "owlEye.h"       // Minerva the owl (DISABLE TRACKING)
 // #include "naugaEye.h"     // Nauga googly eye (DISABLE TRACKING)
 // #include "doeEye.h"       // Cartoon deer eye (DISABLE TRACKING)
+
+// Framebuffer size for eye rendering (must fit the largest eye SCREEN_*).
+#ifndef EYE_FRAMEBUFFER_WIDTH
+#define EYE_FRAMEBUFFER_WIDTH 128
+#endif
+#ifndef EYE_FRAMEBUFFER_HEIGHT
+#define EYE_FRAMEBUFFER_HEIGHT 128
+#endif
+#define EYE_FRAMEBUFFER_PIXELS (EYE_FRAMEBUFFER_WIDTH * EYE_FRAMEBUFFER_HEIGHT)
 
 // DISPLAY HARDWARE SETTINGS (screen type & connections) -------------------
 #define TFT_COUNT 1        // Number of screens (1 or 2)
@@ -135,10 +144,10 @@
 #endif
 #define TFT_1_ROT 0        // TFT 1 rotation
 #define TFT_2_ROT 0        // TFT 2 rotation
-#define EYE_1_XPOSITION  ((DISPLAY_WIDTH - SCREEN_WIDTH) / 2)
-#define EYE_2_XPOSITION  ((DISPLAY_WIDTH - SCREEN_WIDTH) / 2)
-#define EYE_1_YPOSITION  ((DISPLAY_HEIGHT - SCREEN_HEIGHT) / 2)
-#define EYE_2_YPOSITION  ((DISPLAY_HEIGHT - SCREEN_HEIGHT) / 2)
+#define EYE_1_XPOSITION  ((DISPLAY_WIDTH - EYE_FRAMEBUFFER_WIDTH) / 2)
+#define EYE_2_XPOSITION  ((DISPLAY_WIDTH - EYE_FRAMEBUFFER_WIDTH) / 2)
+#define EYE_1_YPOSITION  ((DISPLAY_HEIGHT - EYE_FRAMEBUFFER_HEIGHT) / 2)
+#define EYE_2_YPOSITION  ((DISPLAY_HEIGHT - EYE_FRAMEBUFFER_HEIGHT) / 2)
 
 // EYE LIST ----------------------------------------------------------------
 #define NUM_EYES 1 // Number of eyes to display (1 or 2)
@@ -183,6 +192,12 @@
 #endif
 #if !defined(IRIS_MAX)
   #define IRIS_MAX      130 // Iris size (0-1023) in darkest light
+#endif
+#ifndef EYE_IRIS_MIN_DEFAULT
+#define EYE_IRIS_MIN_DEFAULT 90
+#endif
+#ifndef EYE_IRIS_MAX_DEFAULT
+#define EYE_IRIS_MAX_DEFAULT 130
 #endif
 
 #endif
