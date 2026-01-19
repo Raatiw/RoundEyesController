@@ -65,7 +65,8 @@ namespace
 enum class ProgramMode
 {
   Gif,
-  Eye
+  Eye,
+  Hypno
 };
 
 ProgramMode currentProgram = ProgramMode::Gif;
@@ -74,12 +75,17 @@ size_t eyeProgramCount = 0;
 size_t programIndex = 0;
 uint32_t programStartMs = 0;
 uint8_t eyeBaseRotation = 0;
+bool hypnoInitialized = false;
 
 void setProgramRotation(ProgramMode mode)
 {
   if (mode == ProgramMode::Eye)
   {
     gfx->setRotation(static_cast<uint8_t>((eyeBaseRotation + DISPLAY_ROTATION) & 0x03));
+  }
+  else if (mode == ProgramMode::Hypno)
+  {
+    gfx->setRotation(DISPLAY_ROTATION);
   }
   else
   {
@@ -144,47 +150,47 @@ namespace
 // Map incoming WLED effect numbers (0-40) to GIF program indices.
 // Use -1 to fall back to the default eye animation.
 constexpr int16_t kEffectToProgramMap[] = {
-    -1, // 0
-    0,  // 1 -> beer.gif
-    1,  // 2 -> fish.gif
-    2,  // 3 -> wobble.gif
-    3,  // 4 -> hearth.gif
-    4,  // 5 -> fractal.gif
-    5,  // 6 -> phenakistiscope.gif
-    6,  // 7 -> tunnel.gif
-    -1, // 8
-    -1, // 9
-    -1, // 10
-    -1, // 11
-    -1, // 12
-    -1, // 13
-    -1, // 14
-    -1, // 15
-    -1, // 16
-    -1, // 17
-    -1, // 18
-    -1, // 19
-    -1, // 20
-    -1, // 21
-    -1, // 22
-    -1, // 23
-    -1, // 24
-    -1, // 25
-    -1, // 26
-    -1, // 27
-    -1, // 28
-    -1, // 29
-    -1, // 30
-    -1, // 31
-    -1, // 32
-    -1, // 33
-    -1, // 34
-    -1, // 35
-    -1, // 36
-    -1, // 37
-    -1, // 38
-    -1, // 39
-    -1  // 40
+    -1,  // 0
+    0,   // 1 -> beer.gif
+    1,   // 2 -> fish.gif
+    2,   // 3 -> wobble.gif
+    3,   // 4 -> hearth.gif
+    4,   // 5 -> fractal.gif
+    5,   // 6 -> phenakistiscope.gif
+    6,   // 7 -> tunnel.gif
+    -1,  // 8
+    -1,  // 9
+    -1,  // 10
+    -1,  // 11
+    4,   // 12 -> fractal.gif (same as effect 5)
+    -2,  // 13 -> hypno spiral
+    -1,  // 14
+    -1,  // 15
+    -1,  // 16
+    -1,  // 17
+    -1,  // 18
+    -1,  // 19
+    -1,  // 20
+    -1,  // 21
+    -1,  // 22
+    -1,  // 23
+    -1,  // 24
+    -1,  // 25
+    -1,  // 26
+    -1,  // 27
+    -1,  // 28
+    -1,  // 29
+    -1,  // 30
+    -1,  // 31
+    -1,  // 32
+    -1,  // 33
+    -1,  // 34
+    -1,  // 35
+    -1,  // 36
+    -1,  // 37
+    -1,  // 38
+    -1,  // 39
+    -1   // 40
 };
 constexpr bool kEnableAutoSwitch = false;
 
@@ -201,6 +207,25 @@ void applyMappedProgram(uint8_t effect)
 {
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   const int16_t index = mapEffectToProgram(effect);
+
+  if (index == -2)
+  {
+#if defined(ENABLE_HYPNO_SPIRAL)
+    if (!hypnoInitialized)
+    {
+      hypnoSetup();
+      hypnoInitialized = true;
+    }
+    currentProgram = ProgramMode::Hypno;
+    setProgramRotation(currentProgram);
+    gfx->fillScreen(HYPNO_BACKGROUND_COLOR);
+    return;
+#else
+    fallbackToDefaultEye();
+    return;
+#endif
+  }
+
   if (index < 0)
   {
     fallbackToDefaultEye();
@@ -492,6 +517,12 @@ void loop()
   if (currentProgram == ProgramMode::Eye)
   {
     updateEye();
+  }
+  else if (currentProgram == ProgramMode::Hypno)
+  {
+#if defined(ENABLE_HYPNO_SPIRAL)
+    hypnoStep();
+#endif
   }
   else
   {

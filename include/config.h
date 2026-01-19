@@ -2,14 +2,10 @@
 
 #include "eye_types.h"
 
-// Select which animation to run.
-// #define ENABLE_HYPNO_SPIRAL
+// Enable the animation families you want to use.
+#define ENABLE_HYPNO_SPIRAL
 #define ENABLE_ANIMATED_GIF
 #define ENABLE_EYE_PROGRAM // Include the eye animation in the program loop.
-
-#if defined(ENABLE_HYPNO_SPIRAL) && (defined(ENABLE_ANIMATED_GIF) || defined(ENABLE_EYE_PROGRAM))
-#error "Select only one animation family"
-#endif
 
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
