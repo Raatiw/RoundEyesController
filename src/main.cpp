@@ -239,11 +239,14 @@ constexpr uint16_t kBleCompanyId = 0xFFFF;
 constexpr uint8_t kBleAppId0 = 'V';
 constexpr uint8_t kBleAppId1 = 'R';
 constexpr uint8_t kBleTypeSync = 1;
+constexpr uint8_t kBleTypeEye = 2;
 
 volatile bool g_blePending = false;
 volatile uint8_t g_bleEffect = 0;
+volatile uint8_t g_bleType = 0;
 volatile uint32_t g_bleTimebase = 0;
-uint16_t g_bleLastSeq = 0xFFFF;
+uint16_t g_bleLastSeqSync = 0xFFFF;
+uint16_t g_bleLastSeqEye = 0xFFFF;
 volatile uint32_t g_bleLastMs = 0;
 bool g_bleHasSync = false;
 
@@ -270,26 +273,41 @@ class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
     {
       return;
     }
-    if (bytes[4] != kBleTypeSync)
-    {
-      return;
-    }
+    const uint8_t type = bytes[4];
     const uint16_t seq = bytes[5] | (uint16_t(bytes[6]) << 8);
-    if (seq == g_bleLastSeq)
-    {
-      return;
-    }
-    g_bleLastSeq = seq;
     const uint8_t effect = bytes[7];
-    const uint32_t timebase = uint32_t(bytes[8]) |
-                              (uint32_t(bytes[9]) << 8) |
-                              (uint32_t(bytes[10]) << 16) |
-                              (uint32_t(bytes[11]) << 24);
-    g_bleEffect = effect;
-    g_bleTimebase = timebase;
-    g_blePending = true;
-    g_bleLastMs = millis();
-    g_bleHasSync = true;
+
+    if (type == kBleTypeSync)
+    {
+      if (seq == g_bleLastSeqSync)
+      {
+        return;
+      }
+      g_bleLastSeqSync = seq;
+      const uint32_t timebase = uint32_t(bytes[8]) |
+                                (uint32_t(bytes[9]) << 8) |
+                                (uint32_t(bytes[10]) << 16) |
+                                (uint32_t(bytes[11]) << 24);
+      g_bleEffect = effect;
+      g_bleType = type;
+      g_bleTimebase = timebase;
+      g_blePending = true;
+      g_bleLastMs = millis();
+      g_bleHasSync = true;
+    }
+    else if (type == kBleTypeEye)
+    {
+      if (seq == g_bleLastSeqEye)
+      {
+        return;
+      }
+      g_bleLastSeqEye = seq;
+      g_bleEffect = effect;
+      g_bleType = type;
+      g_bleTimebase = 0;
+      g_blePending = true;
+      g_bleLastMs = millis();
+    }
   }
 };
 
@@ -313,10 +331,22 @@ void bleSyncLoop()
   }
   g_blePending = false;
   const uint8_t effect = g_bleEffect;
-  (void)g_bleTimebase;
-  const int16_t mapped = mapEffectToProgram(effect);
-  Serial.printf("BLE sync: effect %u -> map %d\n", effect, mapped);
-  applyMappedProgram(effect);
+  const uint8_t type = g_bleType;
+  const uint32_t timebase = g_bleTimebase;
+
+  if (type == kBleTypeSync)
+  {
+    const int16_t mapped = mapEffectToProgram(effect);
+    Serial.printf("BLE sync: effect %u -> map %d timebase %lu\n", effect, mapped,
+                  static_cast<unsigned long>(timebase));
+    applyMappedProgram(effect);
+  }
+  else if (type == kBleTypeEye)
+  {
+    const int16_t mapped = mapEffectToProgram(effect);
+    Serial.printf("BLE eye: effect %u -> map %d\n", effect, mapped);
+    applyMappedProgram(effect);
+  }
 }
 
 bool bleSyncHasLock()
