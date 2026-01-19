@@ -47,7 +47,7 @@
 
 // GIF files to cycle through on the SD card (root directory by default).
 #ifndef ANIMATED_GIF_FILES
-#define ANIMATED_GIF_FILES { "/wobble.gif", "/fractal.gif", "/phenakistiscope.gif", "/tunnel.gif", "/hearth.gif" }
+#define ANIMATED_GIF_FILES { "/beer.gif", "/fish.gif", "/wobble.gif", "/hearth.gif", "/fractal.gif", "/phenakistiscope.gif", "/tunnel.gif" }
 #endif
 
 // Switch to the next program every N milliseconds.

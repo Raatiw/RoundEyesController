@@ -4,6 +4,7 @@
 #include <SPI.h>
 
 #if defined(ARDUINO_ARCH_ESP32)
+#include <NimBLEDevice.h>
 #include <esp_random.h>
 #endif
 
@@ -138,6 +139,197 @@ void enterProgram(size_t index)
 } // namespace
 #endif
 
+namespace
+{
+// Map incoming WLED effect numbers (0-40) to GIF program indices.
+// Use -1 to fall back to the default eye animation.
+constexpr int16_t kEffectToProgramMap[] = {
+    -1, // 0
+    0,  // 1 -> beer.gif
+    1,  // 2 -> fish.gif
+    2,  // 3 -> wobble.gif
+    3,  // 4 -> hearth.gif
+    4,  // 5 -> fractal.gif
+    5,  // 6 -> phenakistiscope.gif
+    6,  // 7 -> tunnel.gif
+    -1, // 8
+    -1, // 9
+    -1, // 10
+    -1, // 11
+    -1, // 12
+    -1, // 13
+    -1, // 14
+    -1, // 15
+    -1, // 16
+    -1, // 17
+    -1, // 18
+    -1, // 19
+    -1, // 20
+    -1, // 21
+    -1, // 22
+    -1, // 23
+    -1, // 24
+    -1, // 25
+    -1, // 26
+    -1, // 27
+    -1, // 28
+    -1, // 29
+    -1, // 30
+    -1, // 31
+    -1, // 32
+    -1, // 33
+    -1, // 34
+    -1, // 35
+    -1, // 36
+    -1, // 37
+    -1, // 38
+    -1, // 39
+    -1  // 40
+};
+constexpr bool kEnableAutoSwitch = false;
+
+int16_t mapEffectToProgram(uint8_t effect)
+{
+  if (effect >= (sizeof(kEffectToProgramMap) / sizeof(kEffectToProgramMap[0])))
+  {
+    return -1;
+  }
+  return kEffectToProgramMap[effect];
+}
+
+void applyMappedProgram(uint8_t effect)
+{
+#if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
+  const int16_t index = mapEffectToProgram(effect);
+  if (index < 0)
+  {
+    fallbackToDefaultEye();
+    return;
+  }
+  if (static_cast<size_t>(index) >= gifProgramCount)
+  {
+    fallbackToDefaultEye();
+    return;
+  }
+  enterProgram(static_cast<size_t>(index));
+#elif defined(ENABLE_ANIMATED_GIF)
+  const int16_t index = mapEffectToProgram(effect);
+  if (index >= 0)
+  {
+    if (animatedGifOpenAtIndex(static_cast<size_t>(index)))
+    {
+      startTime = millis();
+    }
+  }
+#elif defined(ENABLE_HYPNO_SPIRAL)
+  (void)effect;
+#else
+  const EyeAsset *asset = getEyeAsset(0);
+  if (asset)
+  {
+    setActiveEye(asset);
+    startTime = millis();
+    Serial.printf("Eye asset (mapped): %s\n", asset->name ? asset->name : "unknown");
+  }
+#endif
+}
+
+#if defined(ARDUINO_ARCH_ESP32)
+constexpr uint16_t kBleCompanyId = 0xFFFF;
+constexpr uint8_t kBleAppId0 = 'V';
+constexpr uint8_t kBleAppId1 = 'R';
+constexpr uint8_t kBleTypeSync = 1;
+
+volatile bool g_blePending = false;
+volatile uint8_t g_bleEffect = 0;
+volatile uint32_t g_bleTimebase = 0;
+uint16_t g_bleLastSeq = 0xFFFF;
+volatile uint32_t g_bleLastMs = 0;
+bool g_bleHasSync = false;
+
+class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
+{
+  void onResult(NimBLEAdvertisedDevice *advertisedDevice) override
+  {
+    if (!advertisedDevice->haveManufacturerData())
+    {
+      return;
+    }
+    const std::string &data = advertisedDevice->getManufacturerData();
+    if (data.size() < 12)
+    {
+      return;
+    }
+    const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data.data());
+    const uint16_t company = bytes[0] | (uint16_t(bytes[1]) << 8);
+    if (company != kBleCompanyId)
+    {
+      return;
+    }
+    if (bytes[2] != kBleAppId0 || bytes[3] != kBleAppId1)
+    {
+      return;
+    }
+    if (bytes[4] != kBleTypeSync)
+    {
+      return;
+    }
+    const uint16_t seq = bytes[5] | (uint16_t(bytes[6]) << 8);
+    if (seq == g_bleLastSeq)
+    {
+      return;
+    }
+    g_bleLastSeq = seq;
+    const uint8_t effect = bytes[7];
+    const uint32_t timebase = uint32_t(bytes[8]) |
+                              (uint32_t(bytes[9]) << 8) |
+                              (uint32_t(bytes[10]) << 16) |
+                              (uint32_t(bytes[11]) << 24);
+    g_bleEffect = effect;
+    g_bleTimebase = timebase;
+    g_blePending = true;
+    g_bleLastMs = millis();
+    g_bleHasSync = true;
+  }
+};
+
+void bleSyncSetup()
+{
+  NimBLEDevice::init("RoundEyes");
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEScan *scan = NimBLEDevice::getScan();
+  scan->setAdvertisedDeviceCallbacks(new BleSyncCallbacks(), true);
+  scan->setActiveScan(false);
+  scan->setInterval(45);
+  scan->setWindow(15);
+  scan->start(0, nullptr, false);
+}
+
+void bleSyncLoop()
+{
+  if (!g_blePending)
+  {
+    return;
+  }
+  g_blePending = false;
+  const uint8_t effect = g_bleEffect;
+  (void)g_bleTimebase;
+  const int16_t mapped = mapEffectToProgram(effect);
+  Serial.printf("BLE sync: effect %u -> map %d\n", effect, mapped);
+  applyMappedProgram(effect);
+}
+
+bool bleSyncHasLock()
+{
+  return g_bleHasSync;
+}
+#else
+void bleSyncSetup() {}
+void bleSyncLoop() {}
+bool bleSyncHasLock() { return false; }
+#endif
+} // namespace
+
 static void waitForSerial()
 {
   const uint32_t serialWaitStart = millis();
@@ -204,6 +396,8 @@ void setup()
   randomSeed(micros());
 #endif
 
+  bleSyncSetup();
+
   if (!gfx->begin())
   {
     Serial.println("GC9A01 init failed");
@@ -256,9 +450,10 @@ void setup()
 
 void loop()
 {
+  bleSyncLoop();
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   const uint32_t now = millis();
-  if (ANIMATED_GIF_SWITCH_INTERVAL_MS > 0 &&
+  if (kEnableAutoSwitch && !bleSyncHasLock() && ANIMATED_GIF_SWITCH_INTERVAL_MS > 0 &&
       (now - programStartMs) >= ANIMATED_GIF_SWITCH_INTERVAL_MS)
   {
     enterProgram(programIndex + 1);
