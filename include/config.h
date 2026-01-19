@@ -44,6 +44,9 @@
 #ifndef SD_CS_PIN
 #define SD_CS_PIN 32
 #endif
+#ifndef ANIMATED_GIF_SD_FREQ
+#define ANIMATED_GIF_SD_FREQ 40000000
+#endif
 
 // GIF files to cycle through on the SD card (root directory by default).
 #ifndef ANIMATED_GIF_FILES
@@ -77,7 +80,11 @@
 #endif
 
 #ifndef ANIMATED_GIF_DEFAULT_DELAY
-#define ANIMATED_GIF_DEFAULT_DELAY 67
+#define ANIMATED_GIF_DEFAULT_DELAY 33
+#endif
+
+#ifndef ANIMATED_GIF_MAX_DELAY
+#define ANIMATED_GIF_MAX_DELAY 33
 #endif
 
 #if !defined(ANIMATED_GIF_USE_SD)

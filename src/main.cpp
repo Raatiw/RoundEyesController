@@ -371,7 +371,7 @@ void setup()
 
 #if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
   SPI.begin(SCK, MISO, MOSI, SD_CS);
-  if (!SD.begin(SD_CS))
+  if (!SD.begin(SD_CS, SPI, ANIMATED_GIF_SD_FREQ))
   {
     Serial.println("SD init failed");
   }

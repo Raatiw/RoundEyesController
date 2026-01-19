@@ -20,6 +20,10 @@ AnimatedGIF gif;
 bool gifReady = false;
 int16_t offsetX = 0;
 int16_t offsetY = 0;
+uint16_t gifSourceWidth = 0;
+uint16_t gifSourceHeight = 0;
+bool gifScaleEnabled = false;
+uint8_t gifScale = 1;
 uint16_t lineBuffer[DISPLAY_WIDTH];
 uint32_t lastFrameMillis = 0;
 uint16_t lastFrameDelay = ANIMATED_GIF_DEFAULT_DELAY;
@@ -56,6 +60,18 @@ void blitRun(int16_t x, int16_t y, int16_t length)
     return;
   }
   gfx->draw16bitRGBBitmap(x, y, lineBuffer, length, 1);
+}
+
+void blitScaledRun(int16_t x, int16_t y, int16_t length, uint8_t scale)
+{
+  if (length <= 0 || scale == 0)
+  {
+    return;
+  }
+  for (uint8_t row = 0; row < scale; ++row)
+  {
+    gfx->draw16bitRGBBitmap(x, static_cast<int16_t>(y + row), lineBuffer, length, 1);
+  }
 }
 
 void GIFDraw(GIFDRAW *pDraw)
@@ -107,6 +123,26 @@ void GIFDraw(GIFDRAW *pDraw)
     pDraw->ucHasTransparency = 0;
   }
 
+  const uint8_t scale = gifScaleEnabled ? gifScale : 1;
+  if (gifScaleEnabled)
+  {
+    x = static_cast<int16_t>(x * scale);
+    y = static_cast<int16_t>(y * scale);
+    width = static_cast<int16_t>(width * scale);
+    if (x >= CANVAS_WIDTH || y >= CANVAS_HEIGHT)
+    {
+      return;
+    }
+    if (x + width > CANVAS_WIDTH)
+    {
+      width = static_cast<int16_t>(CANVAS_WIDTH - x);
+    }
+    if (width <= 0)
+    {
+      return;
+    }
+  }
+
   if (pDraw->ucHasTransparency)
   {
     int16_t runLen = 0;
@@ -132,14 +168,28 @@ void GIFDraw(GIFDRAW *pDraw)
         }
         if (runLen < static_cast<int16_t>(sizeof(lineBuffer) / sizeof(lineBuffer[0])))
         {
-          lineBuffer[runLen++] = palette[index];
+          const uint16_t color = palette[index];
+          for (uint8_t sx = 0; sx < scale; ++sx)
+          {
+            if (runLen < static_cast<int16_t>(sizeof(lineBuffer) / sizeof(lineBuffer[0])))
+            {
+              lineBuffer[runLen++] = color;
+            }
+          }
         }
       }
     }
 
     if (runLen > 0)
     {
-      blitRun(x + runStart, y, runLen);
+      if (gifScaleEnabled)
+      {
+        blitScaledRun(static_cast<int16_t>(x + runStart * scale), y, runLen, scale);
+      }
+      else
+      {
+        blitRun(x + runStart, y, runLen);
+      }
     }
   }
   else
@@ -155,10 +205,34 @@ void GIFDraw(GIFDRAW *pDraw)
       }
       for (int16_t i = 0; i < chunk; ++i)
       {
-        lineBuffer[i] = palette[src[processed + i]];
+        const uint16_t color = palette[src[processed + i]];
+        if (gifScaleEnabled)
+        {
+          for (uint8_t sx = 0; sx < scale; ++sx)
+          {
+            const int16_t idx = static_cast<int16_t>(i * scale + sx);
+            if (idx < maxChunk)
+            {
+              lineBuffer[idx] = color;
+            }
+          }
+        }
+        else
+        {
+          lineBuffer[i] = color;
+        }
       }
-      blitRun(x + processed, y, chunk);
-      processed += chunk;
+      if (gifScaleEnabled)
+      {
+        const int16_t scaledLen = static_cast<int16_t>(chunk * scale);
+        blitScaledRun(static_cast<int16_t>(x + processed * scale), y, scaledLen, scale);
+        processed += chunk;
+      }
+      else
+      {
+        blitRun(x + processed, y, chunk);
+        processed += chunk;
+      }
     }
   }
 }
@@ -250,8 +324,14 @@ bool openGifAtIndex(size_t index)
   const int canvasWidth = gif.getCanvasWidth();
   const int canvasHeight = gif.getCanvasHeight();
 
-  offsetX = (CANVAS_WIDTH > canvasWidth) ? static_cast<int16_t>((CANVAS_WIDTH - canvasWidth) / 2) : 0;
-  offsetY = (CANVAS_HEIGHT > canvasHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - canvasHeight) / 2) : 0;
+  gifSourceWidth = static_cast<uint16_t>(canvasWidth);
+  gifSourceHeight = static_cast<uint16_t>(canvasHeight);
+  gifScaleEnabled = (canvasWidth <= CANVAS_WIDTH / 2) && (canvasHeight <= CANVAS_HEIGHT / 2);
+  gifScale = gifScaleEnabled ? 2 : 1;
+  const uint16_t scaledWidth = static_cast<uint16_t>(canvasWidth * gifScale);
+  const uint16_t scaledHeight = static_cast<uint16_t>(canvasHeight * gifScale);
+  offsetX = (CANVAS_WIDTH > scaledWidth) ? static_cast<int16_t>((CANVAS_WIDTH - scaledWidth) / 2) : 0;
+  offsetY = (CANVAS_HEIGHT > scaledHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - scaledHeight) / 2) : 0;
 
   resetGifTiming();
   gifReady = true;
@@ -306,8 +386,14 @@ void animatedGifSetup()
   const int canvasWidth = gif.getCanvasWidth();
   const int canvasHeight = gif.getCanvasHeight();
 
-  offsetX = (CANVAS_WIDTH > canvasWidth) ? static_cast<int16_t>((CANVAS_WIDTH - canvasWidth) / 2) : 0;
-  offsetY = (CANVAS_HEIGHT > canvasHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - canvasHeight) / 2) : 0;
+  gifSourceWidth = static_cast<uint16_t>(canvasWidth);
+  gifSourceHeight = static_cast<uint16_t>(canvasHeight);
+  gifScaleEnabled = (canvasWidth <= CANVAS_WIDTH / 2) && (canvasHeight <= CANVAS_HEIGHT / 2);
+  gifScale = gifScaleEnabled ? 2 : 1;
+  const uint16_t scaledWidth = static_cast<uint16_t>(canvasWidth * gifScale);
+  const uint16_t scaledHeight = static_cast<uint16_t>(canvasHeight * gifScale);
+  offsetX = (CANVAS_WIDTH > scaledWidth) ? static_cast<int16_t>((CANVAS_WIDTH - scaledWidth) / 2) : 0;
+  offsetY = (CANVAS_HEIGHT > scaledHeight) ? static_cast<int16_t>((CANVAS_HEIGHT - scaledHeight) / 2) : 0;
 
   resetGifTiming();
   gifReady = true;
@@ -353,6 +439,10 @@ void animatedGifLoop()
   if (delayMs <= 0)
   {
     delayMs = ANIMATED_GIF_DEFAULT_DELAY;
+  }
+  if (delayMs > ANIMATED_GIF_MAX_DELAY)
+  {
+    delayMs = ANIMATED_GIF_MAX_DELAY;
   }
 
   lastFrameDelay = static_cast<uint16_t>(delayMs);
