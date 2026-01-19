@@ -40,6 +40,7 @@ constexpr uint32_t kGifSwitchIntervalMs = ANIMATED_GIF_SWITCH_INTERVAL_MS;
 const char *const kGifFiles[] = ANIMATED_GIF_FILES;
 constexpr size_t kGifFileCount = sizeof(kGifFiles) / sizeof(kGifFiles[0]);
 size_t currentGifIndex = 0;
+size_t loadedGifIndex = SIZE_MAX;
 uint32_t lastSwitchMillis = 0;
 File gifFile;
 #endif
@@ -386,6 +387,8 @@ bool openGifAtIndex(size_t index)
     return false;
   }
 
+  loadedGifIndex = index;
+  currentGifIndex = index;
   const char *filename = kGifFiles[index];
   if (!gif.open(filename, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw))
   {
@@ -424,7 +427,6 @@ bool openNextGif()
     const size_t index = (currentGifIndex + attempt) % kGifFileCount;
     if (openGifAtIndex(index))
     {
-      currentGifIndex = index;
       return true;
     }
   }
@@ -543,6 +545,12 @@ size_t animatedGifFileCount()
 bool animatedGifOpenAtIndex(size_t index)
 {
 #if defined(ANIMATED_GIF_USE_SD)
+  if (gifReady && index == loadedGifIndex)
+  {
+    gif.reset();
+    resetGifTiming();
+    return true;
+  }
   return openGifAtIndex(index);
 #else
   if (index != 0 || !gifReady)
