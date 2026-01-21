@@ -29,6 +29,10 @@
 #define HYPNO_SECONDARY_COLOR   0x0000 // dark stripe colour (black)
 #define HYPNO_BACKGROUND_COLOR  0x0000 // outside the circle
 
+// If enabled, the bright stripes render as a rainbow wheel instead of
+// `HYPNO_PRIMARY_COLOR` (the dark stripes still use `HYPNO_SECONDARY_COLOR`).
+#define HYPNO_RAINBOW_PRIMARY
+
 #define HYPNO_STRIPE_COUNT      3.0f   // number of bright arms around the centre
 #define HYPNO_TWIST_FACTOR      5.0f  // amount of angular twist from centre to rim
 #define HYPNO_RADIUS_EXPONENT   0.85f  // radial easing (<1 tightens the centre)

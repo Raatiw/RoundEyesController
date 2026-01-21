@@ -30,6 +30,35 @@ uint16_t *spiralBuffer = nullptr;
 uint16_t *phaseMap = nullptr;
 uint8_t *maskMap = nullptr;
 uint16_t phaseOffset = 0;
+
+#if defined(HYPNO_RAINBOW_PRIMARY)
+constexpr uint16_t rgb565FromRgb888(uint8_t r, uint8_t g, uint8_t b)
+{
+  return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+uint16_t wheelRgb565(uint8_t wheelPos)
+{
+  wheelPos = static_cast<uint8_t>(255 - wheelPos);
+
+  if (wheelPos < 85)
+  {
+    const uint8_t ramp = static_cast<uint8_t>(wheelPos * 3);
+    return rgb565FromRgb888(static_cast<uint8_t>(255 - ramp), 0, ramp);
+  }
+
+  if (wheelPos < 170)
+  {
+    wheelPos = static_cast<uint8_t>(wheelPos - 85);
+    const uint8_t ramp = static_cast<uint8_t>(wheelPos * 3);
+    return rgb565FromRgb888(0, ramp, static_cast<uint8_t>(255 - ramp));
+  }
+
+  wheelPos = static_cast<uint8_t>(wheelPos - 170);
+  const uint8_t ramp = static_cast<uint8_t>(wheelPos * 3);
+  return rgb565FromRgb888(ramp, static_cast<uint8_t>(255 - ramp), 0);
+}
+#endif
 } // namespace
 
 void hypnoSetup()
@@ -139,7 +168,18 @@ void hypnoStep()
 
     const uint16_t value = static_cast<uint16_t>(phaseMap[i] + phaseOffset);
     const bool stripeOn = value < dutyThreshold;
-    spiralBuffer[i] = stripeOn ? HYPNO_PRIMARY_COLOR : HYPNO_SECONDARY_COLOR;
+    if (stripeOn)
+    {
+#if defined(HYPNO_RAINBOW_PRIMARY)
+      spiralBuffer[i] = wheelRgb565(static_cast<uint8_t>(value >> 8));
+#else
+      spiralBuffer[i] = HYPNO_PRIMARY_COLOR;
+#endif
+    }
+    else
+    {
+      spiralBuffer[i] = HYPNO_SECONDARY_COLOR;
+    }
   }
 
   gfx->draw16bitRGBBitmap(0, 0, spiralBuffer, WIDTH, HEIGHT);
