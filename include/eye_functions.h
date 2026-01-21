@@ -71,6 +71,47 @@ uint16_t newIris = 0;
 
 static bool irisValueNeedsReset = true;
 
+#if defined(ENABLE_EYELIDS) && defined(ENABLE_EYELID_SHADING)
+static uint16_t eyelidShadeLut[256];
+static bool eyelidShadeLutReady = false;
+
+static void initEyelidShadeLut()
+{
+  if (eyelidShadeLutReady)
+  {
+    return;
+  }
+
+  const uint16_t shadow = EYELID_COLOR_SHADOW;
+  const uint16_t highlight = EYELID_COLOR_HIGHLIGHT;
+  const int16_t r0 = static_cast<int16_t>((shadow >> 11) & 0x1F);
+  const int16_t g0 = static_cast<int16_t>((shadow >> 5) & 0x3F);
+  const int16_t b0 = static_cast<int16_t>(shadow & 0x1F);
+  const int16_t r1 = static_cast<int16_t>((highlight >> 11) & 0x1F);
+  const int16_t g1 = static_cast<int16_t>((highlight >> 5) & 0x3F);
+  const int16_t b1 = static_cast<int16_t>(highlight & 0x1F);
+
+  for (uint16_t i = 0; i < 256; ++i)
+  {
+    const int16_t r = static_cast<int16_t>(r0 + ((r1 - r0) * static_cast<int16_t>(i)) / 255);
+    const int16_t g = static_cast<int16_t>(g0 + ((g1 - g0) * static_cast<int16_t>(i)) / 255);
+    const int16_t b = static_cast<int16_t>(b0 + ((b1 - b0) * static_cast<int16_t>(i)) / 255);
+    eyelidShadeLut[i] = static_cast<uint16_t>(((r & 0x1F) << 11) | ((g & 0x3F) << 5) | (b & 0x1F));
+  }
+
+  eyelidShadeLutReady = true;
+}
+
+static uint16_t eyelidShade(uint8_t shade)
+{
+  if (!eyelidShadeLutReady)
+  {
+    initEyelidShadeLut();
+  }
+  return eyelidShadeLut[shade];
+}
+#endif
+
 void setActiveEye(const EyeAsset *asset)
 {
   if (!asset)
@@ -224,12 +265,21 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
 #endif
     for (screenX = 0; screenX < screenWidth; screenX++, scleraX++, irisX++) {
       bool eyelidMasked = false;
+      uint8_t upperValue = 0;
+      uint8_t lowerValue = 0;
 #if defined(ENABLE_EYELIDS)
-      eyelidMasked = (pgm_read_byte(lowerLid + screenY * screenWidth + lidX) <= lT) ||
-                     (pgm_read_byte(upperLid + screenY * screenWidth + lidX) <= uT);
+      const uint32_t lidIndex = screenY * screenWidth + lidX;
+      lowerValue = pgm_read_byte(lowerLid + lidIndex);
+      upperValue = pgm_read_byte(upperLid + lidIndex);
+      eyelidMasked = (lowerValue <= lT) || (upperValue <= uT);
 #endif
       if (eyelidMasked) {
+  #if defined(ENABLE_EYELIDS) && defined(ENABLE_EYELID_SHADING)
+        const uint8_t shade = (upperValue < lowerValue) ? upperValue : lowerValue;
+        p = eyelidShade(shade);
+  #else
         p = 0;
+  #endif
       } else if ((irisY < 0) || (irisY >= irisHeight) ||
                  (irisX < 0) || (irisX >= irisWidth)) { // In sclera
         p = pgm_read_word(scleraPixels + scleraY * scleraWidth + scleraX);

@@ -199,6 +199,17 @@
 #define EYE_BACKGROUND_COLOR 0x0000
 #endif
 
+// Eyelid rendering: the stock Uncanny Eyes assets provide `upper[]`/`lower[]`
+// as 8-bit threshold maps (not colored textures). When enabled, masked pixels
+// are filled with a shaded lid color instead of solid black.
+#define ENABLE_EYELID_SHADING
+#ifndef EYELID_COLOR_SHADOW
+#define EYELID_COLOR_SHADOW 0xB3CC // darker (RGB565)
+#endif
+#ifndef EYELID_COLOR_HIGHLIGHT
+#define EYELID_COLOR_HIGHLIGHT 0xFF17 // lighter (RGB565)
+#endif
+
 #define IRIS_SMOOTH         // If enabled, filter input from IRIS_PIN
 #if !defined(IRIS_MIN)      // Each eye might have its own MIN/MAX
   #define IRIS_MIN       90 // Iris size (0-1023) in brightest light
