@@ -214,7 +214,7 @@
 #define EYELID_COLOR_HIGHLIGHT 0xFF17 // lighter (RGB565)
 #endif
 
-#define ENABLE_EYELASHES
+//#define ENABLE_EYELASHES
 #ifndef EYELASH_COLOR
 #define EYELASH_COLOR 0x0000 // lash/liner colour (RGB565)
 #endif
