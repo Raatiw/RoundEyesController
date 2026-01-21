@@ -342,60 +342,80 @@ bool swirlTransitionActive(uint32_t now)
 
 namespace
 {
-// Map incoming WLED effect numbers (0-40) to GIF program indices.
-// Use -1 to fall back to the default eye animation.
-constexpr int16_t kEffectToProgramMap[] = {
-    -1,  // 0
-    0,   // 1 -> beer.gif
-    1,   // 2 -> fish.gif
-    2,   // 3 -> wobble.gif
-    3,   // 4 -> hearth.gif
-    4,   // 5 -> fractal.gif
-    5,   // 6 -> phenakistiscope.gif
-    6,   // 7 -> tunnel.gif
-    -1,  // 8
-    -1,  // 9
-    -1,  // 10
-    -1,  // 11
-    4,   // 12 -> fractal.gif (same as effect 5)
-    -2,  // 13 -> hypno spiral
-    -1,  // 14
-    -1,  // 15
-    -1,  // 16
-    -1,  // 17
-    -1,  // 18
-    -1,  // 19
-    -1,  // 20
-    -1,  // 21
-    -1,  // 22
-    -1,  // 23
-    -1,  // 24
-    -1,  // 25
-    -1,  // 26
-    -1,  // 27
-    -1,  // 28
-    -1,  // 29
-    -1,  // 30
-    -1,  // 31
-    -1,  // 32
-    -1,  // 33
-    -1,  // 34
-    -1,  // 35
-    -1,  // 36
-    -1,  // 37
-    -1,  // 38
-    -1,  // 39
-    -1   // 40
+// Map incoming WLED effect numbers to programs.
+// - `-1` = default eye
+// - `-2` = hypno spiral
+// - `>=0` = GIF index (must match `ANIMATED_GIF_FILES` ordering in `include/config.h`)
+enum class GifProgram : int16_t
+{
+  Beer = 0,
+  Fish,
+  Wobble,
+  Hearth,
+  Fractal,
+  Phenakistiscope,
+  Tunnel,
+  Optical1,
+  Optical2,
+  Optical3,
+  Optical4,
+  Optical5,
+  Optical6,
+  Optical7,
+  Drop1,
+  Drop2
 };
+
+constexpr int16_t kProgramDefaultEye = -1;
+constexpr int16_t kProgramHypno = -2;
+
+constexpr int16_t gifProgram(GifProgram program)
+{
+  return static_cast<int16_t>(program);
+}
 constexpr bool kEnableAutoSwitch = false;
 
 int16_t mapEffectToProgram(uint8_t effect)
 {
-  if (effect >= (sizeof(kEffectToProgramMap) / sizeof(kEffectToProgramMap[0])))
+  switch (effect)
   {
-    return -1;
+  case 1:
+    return gifProgram(GifProgram::Beer);
+  case 2:
+    return gifProgram(GifProgram::Fish);
+  case 3:
+    return gifProgram(GifProgram::Wobble);
+  case 4:
+    return gifProgram(GifProgram::Hearth);
+  case 5:
+    return gifProgram(GifProgram::Fractal);
+  case 6:
+    return gifProgram(GifProgram::Phenakistiscope);
+  case 7:
+    return gifProgram(GifProgram::Tunnel);
+  case 8:
+    return gifProgram(GifProgram::Optical1);
+  case 9:
+    return gifProgram(GifProgram::Optical2);
+  case 10:
+    return gifProgram(GifProgram::Optical3);
+  case 11:
+    return gifProgram(GifProgram::Optical4);
+  case 12:
+    return gifProgram(GifProgram::Optical5);
+  case 13:
+    return kProgramHypno;
+  case 14:
+    return gifProgram(GifProgram::Optical6);
+  case 15:
+    return gifProgram(GifProgram::Optical7);
+  case 16:
+    return gifProgram(GifProgram::Drop2);
+  case 17:
+    return gifProgram(GifProgram::Drop1);
+  default:
+    return kProgramDefaultEye;
   }
-  return kEffectToProgramMap[effect];
 }
 
 void applyMappedProgram(uint8_t effect)
