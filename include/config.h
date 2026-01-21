@@ -214,6 +214,40 @@
 #define EYELID_COLOR_HIGHLIGHT 0xFF17 // lighter (RGB565)
 #endif
 
+#define ENABLE_EYELASHES
+#ifndef EYELASH_COLOR
+#define EYELASH_COLOR 0x0000 // lash/liner colour (RGB565)
+#endif
+// Lash length is expressed in eyelid-map units (0-255). Bigger = longer lashes.
+#ifndef EYELASH_LENGTH
+#define EYELASH_LENGTH 20
+#endif
+// Thickness of the continuous "lash line" right at the lid edge.
+#ifndef EYELASH_BASE_THICKNESS
+#define EYELASH_BASE_THICKNESS 2
+#endif
+// 0..255 (lower = fewer lashes drawn along the lid).
+#ifndef EYELASH_DENSITY
+#define EYELASH_DENSITY 180
+#endif
+#ifndef EYELASH_LENGTH_VARIATION
+#define EYELASH_LENGTH_VARIATION 6
+#endif
+
+// Lower lashes are typically shorter and sparser than the upper lash line.
+#ifndef EYELASH_LOWER_LENGTH
+#define EYELASH_LOWER_LENGTH 10
+#endif
+#ifndef EYELASH_LOWER_BASE_THICKNESS
+#define EYELASH_LOWER_BASE_THICKNESS 1
+#endif
+#ifndef EYELASH_LOWER_DENSITY
+#define EYELASH_LOWER_DENSITY 120
+#endif
+#ifndef EYELASH_LOWER_LENGTH_VARIATION
+#define EYELASH_LOWER_LENGTH_VARIATION 4
+#endif
+
 #ifndef EYE_BACKGROUND_COLOR
 #define EYE_BACKGROUND_COLOR EYELID_COLOR_SHADOW
 #endif

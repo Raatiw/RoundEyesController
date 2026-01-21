@@ -293,6 +293,54 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
           p = pgm_read_word(scleraPixels + scleraY * scleraWidth + scleraX);               // Pixel = sclera
         }
       }
+#if defined(ENABLE_EYELIDS) && defined(ENABLE_EYELASHES)
+      if (!eyelidMasked)
+      {
+        const uint8_t upperThreshold = static_cast<uint8_t>(uT);
+        if (upperValue > upperThreshold)
+        {
+          const uint8_t dist = static_cast<uint8_t>(upperValue - upperThreshold);
+          const uint8_t hash = static_cast<uint8_t>(screenX * 37u + 11u);
+          uint8_t len = static_cast<uint8_t>(EYELASH_LENGTH);
+          if (EYELASH_LENGTH_VARIATION > 0)
+          {
+            const uint8_t jitter = static_cast<uint8_t>(hash % (EYELASH_LENGTH_VARIATION + 1));
+            len = (jitter < len) ? static_cast<uint8_t>(len - jitter) : 1;
+          }
+
+          if (len > 0 && dist <= len)
+          {
+            if (dist <= EYELASH_BASE_THICKNESS || hash < EYELASH_DENSITY)
+            {
+              p = EYELASH_COLOR;
+            }
+          }
+        }
+      }
+      else
+      {
+        const uint8_t lowerThreshold = static_cast<uint8_t>(lT);
+        if (lowerValue <= lowerThreshold && lowerValue < upperValue)
+        {
+          const uint8_t dist = static_cast<uint8_t>(lowerThreshold - lowerValue);
+          const uint8_t hash = static_cast<uint8_t>(screenX * 53u + 97u);
+          uint8_t len = static_cast<uint8_t>(EYELASH_LOWER_LENGTH);
+          if (EYELASH_LOWER_LENGTH_VARIATION > 0)
+          {
+            const uint8_t jitter = static_cast<uint8_t>(hash % (EYELASH_LOWER_LENGTH_VARIATION + 1));
+            len = (jitter < len) ? static_cast<uint8_t>(len - jitter) : 1;
+          }
+
+          if (len > 0 && dist <= len)
+          {
+            if (dist <= EYELASH_LOWER_BASE_THICKNESS || hash < EYELASH_LOWER_DENSITY)
+            {
+              p = EYELASH_COLOR;
+            }
+          }
+        }
+      }
+#endif
       if (pixelIndex < screenPixels) {
         eyeFrameBuffer[pixelIndex++] = static_cast<uint16_t>(p);
       }
