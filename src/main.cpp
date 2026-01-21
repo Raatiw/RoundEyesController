@@ -658,7 +658,14 @@ void setup()
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   gifProgramCount = animatedGifFileCount();
   eyeProgramCount = eyeAssetCount();
-  enterProgram(0);
+  if (eyeProgramCount > 0)
+  {
+    enterProgram(gifProgramCount); // start on the default eye (eye index 0)
+  }
+  else
+  {
+    enterProgram(0);
+  }
 #endif
 #elif defined(ENABLE_HYPNO_SPIRAL)
   hypnoSetup();

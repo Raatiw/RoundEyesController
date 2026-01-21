@@ -303,7 +303,50 @@ void drawEye( // Renders one eye.  Inputs must be pre-clipped & valid.
     yield();
   }
 
+#if defined(EYE_SCALE_TO_DISPLAY) && (NUM_EYES == 1)
+  if (screenWidth == DISPLAY_WIDTH && screenHeight == DISPLAY_HEIGHT)
+  {
+    gfx->draw16bitRGBBitmap(0, 0, eyeFrameBuffer, screenWidth, screenHeight);
+    return;
+  }
+
+  static uint16_t scaleSrcWidth = 0;
+  static uint8_t xMap[DISPLAY_WIDTH];
+
+  if (scaleSrcWidth != screenWidth)
+  {
+    scaleSrcWidth = screenWidth;
+    for (uint16_t x = 0; x < DISPLAY_WIDTH; ++x)
+    {
+      xMap[x] = static_cast<uint8_t>((static_cast<uint32_t>(x) * screenWidth) / DISPLAY_WIDTH);
+    }
+  }
+
+  static uint16_t scaledChunk[DISPLAY_WIDTH * EYE_SCALE_CHUNK_LINES];
+  for (uint16_t y0 = 0; y0 < DISPLAY_HEIGHT; y0 += EYE_SCALE_CHUNK_LINES)
+  {
+    const uint16_t lines = (y0 + EYE_SCALE_CHUNK_LINES <= DISPLAY_HEIGHT)
+                               ? static_cast<uint16_t>(EYE_SCALE_CHUNK_LINES)
+                               : static_cast<uint16_t>(DISPLAY_HEIGHT - y0);
+    for (uint16_t dy = 0; dy < lines; ++dy)
+    {
+      const uint16_t yOut = static_cast<uint16_t>(y0 + dy);
+      const uint16_t ySrc =
+          static_cast<uint16_t>((static_cast<uint32_t>(yOut) * screenHeight) / DISPLAY_HEIGHT);
+      const uint32_t srcRow = static_cast<uint32_t>(ySrc) * screenWidth;
+      const uint32_t dstRow = static_cast<uint32_t>(dy) * DISPLAY_WIDTH;
+
+      for (uint16_t x = 0; x < DISPLAY_WIDTH; ++x)
+      {
+        scaledChunk[dstRow + x] = eyeFrameBuffer[srcRow + xMap[x]];
+      }
+    }
+    gfx->draw16bitRGBBitmap(0, y0, scaledChunk, DISPLAY_WIDTH, lines);
+    yield();
+  }
+#else
   gfx->draw16bitRGBBitmap(eye[e].xposition, eye[e].yposition, eyeFrameBuffer, screenWidth, screenHeight);
+#endif
 }
 
 // EYE ANIMATION -----------------------------------------------------------

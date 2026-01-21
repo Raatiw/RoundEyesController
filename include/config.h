@@ -142,6 +142,13 @@
 #endif
 #define EYE_FRAMEBUFFER_PIXELS (EYE_FRAMEBUFFER_WIDTH * EYE_FRAMEBUFFER_HEIGHT)
 
+// When the eye assets are smaller than the physical display (e.g. 128×128
+// assets on a 240×240 round TFT), scale the rendered eye to fill the panel.
+#define EYE_SCALE_TO_DISPLAY
+#ifndef EYE_SCALE_CHUNK_LINES
+#define EYE_SCALE_CHUNK_LINES 16
+#endif
+
 // DISPLAY HARDWARE SETTINGS (screen type & connections) -------------------
 #define TFT_COUNT 1        // Number of screens (1 or 2)
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32_V2)
