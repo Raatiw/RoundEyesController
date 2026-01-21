@@ -142,9 +142,10 @@
 #endif
 #define EYE_FRAMEBUFFER_PIXELS (EYE_FRAMEBUFFER_WIDTH * EYE_FRAMEBUFFER_HEIGHT)
 
-// When the eye assets are smaller than the physical display (e.g. 128×128
-// assets on a 240×240 round TFT), scale the rendered eye to fill the panel.
-#define EYE_SCALE_TO_DISPLAY
+// Optional: when the eye assets are smaller than the physical display
+// (e.g. 128×128 assets on a 240×240 round TFT), scale the rendered eye to fill
+// the panel. Leave this disabled if you want the original eye sizing.
+// #define EYE_SCALE_TO_DISPLAY
 #ifndef EYE_SCALE_CHUNK_LINES
 #define EYE_SCALE_CHUNK_LINES 16
 #endif
@@ -202,10 +203,6 @@
 #define LIGHT_MIN       0 // Minimum useful reading from light sensor
 #define LIGHT_MAX    1023 // Maximum useful reading from sensor
 
-#ifndef EYE_BACKGROUND_COLOR
-#define EYE_BACKGROUND_COLOR 0x0000
-#endif
-
 // Eyelid rendering: the stock Uncanny Eyes assets provide `upper[]`/`lower[]`
 // as 8-bit threshold maps (not colored textures). When enabled, masked pixels
 // are filled with a shaded lid color instead of solid black.
@@ -215,6 +212,10 @@
 #endif
 #ifndef EYELID_COLOR_HIGHLIGHT
 #define EYELID_COLOR_HIGHLIGHT 0xFF17 // lighter (RGB565)
+#endif
+
+#ifndef EYE_BACKGROUND_COLOR
+#define EYE_BACKGROUND_COLOR EYELID_COLOR_SHADOW
 #endif
 
 #define IRIS_SMOOTH         // If enabled, filter input from IRIS_PIN
