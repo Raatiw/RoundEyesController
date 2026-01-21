@@ -7,6 +7,12 @@
 #define ENABLE_ANIMATED_GIF
 #define ENABLE_EYE_PROGRAM // Include the eye animation in the program loop.
 
+// Optional visual transition when switching effects via BLE mapping.
+// Uses the hypno spiral renderer as a short "swirl" interstitial.
+#define ENABLE_SWIRL_TRANSITION
+#define SWIRL_TRANSITION_DURATION_MS 500
+#define SWIRL_TRANSITION_FRAME_MS 33
+
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 240

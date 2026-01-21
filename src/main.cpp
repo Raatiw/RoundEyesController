@@ -76,6 +76,19 @@ size_t programIndex = 0;
 uint32_t programStartMs = 0;
 uint8_t eyeBaseRotation = 0;
 bool hypnoInitialized = false;
+int16_t activeMappedIndex = -1;
+
+#if defined(ENABLE_SWIRL_TRANSITION)
+struct SwirlTransitionState
+{
+  bool active = false;
+  int16_t targetMappedIndex = -1;
+  uint32_t startMs = 0;
+  uint32_t lastFrameMs = 0;
+};
+
+SwirlTransitionState g_swirlTransition;
+#endif
 
 void setProgramRotation(ProgramMode mode)
 {
@@ -96,6 +109,7 @@ void setProgramRotation(ProgramMode mode)
 void fallbackToDefaultEye()
 {
   currentProgram = ProgramMode::Eye;
+  activeMappedIndex = -1;
   setProgramRotation(currentProgram);
   gfx->fillScreen(EYE_BACKGROUND_COLOR);
   const EyeAsset *asset = getEyeAsset(0);
@@ -105,6 +119,22 @@ void fallbackToDefaultEye()
     Serial.printf("Eye asset (fallback): %s\n", asset->name ? asset->name : "unknown");
   }
   startTime = millis();
+}
+
+void enterHypno()
+{
+#if defined(ENABLE_HYPNO_SPIRAL)
+  if (!hypnoInitialized)
+  {
+    hypnoSetup();
+    hypnoInitialized = true;
+  }
+  currentProgram = ProgramMode::Hypno;
+  activeMappedIndex = -2;
+  setProgramRotation(currentProgram);
+#else
+  fallbackToDefaultEye();
+#endif
 }
 
 void enterProgram(size_t index)
@@ -120,6 +150,7 @@ void enterProgram(size_t index)
   if (gifProgramCount > 0 && programIndex < gifProgramCount)
   {
     currentProgram = ProgramMode::Gif;
+    activeMappedIndex = static_cast<int16_t>(programIndex);
     setProgramRotation(currentProgram);
     gfx->fillScreen(ANIMATED_GIF_BACKGROUND);
     if (!animatedGifOpenAtIndex(programIndex))
@@ -130,6 +161,7 @@ void enterProgram(size_t index)
   else
   {
     currentProgram = ProgramMode::Eye;
+    activeMappedIndex = -1;
     setProgramRotation(currentProgram);
     gfx->fillScreen(EYE_BACKGROUND_COLOR);
     const size_t eyeIndex = programIndex - gifProgramCount;
@@ -141,6 +173,169 @@ void enterProgram(size_t index)
     }
     startTime = millis();
   }
+}
+
+void renderFirstFrame()
+{
+  if (currentProgram == ProgramMode::Eye)
+  {
+    updateEye();
+    return;
+  }
+
+  if (currentProgram == ProgramMode::Hypno)
+  {
+#if defined(ENABLE_HYPNO_SPIRAL)
+    hypnoStep();
+#endif
+    return;
+  }
+
+  animatedGifLoop();
+  if (!animatedGifIsReady())
+  {
+    fallbackToDefaultEye();
+  }
+}
+
+void applyMappedProgramImmediate(int16_t mappedIndex)
+{
+  if (mappedIndex == -2)
+  {
+    enterHypno();
+    return;
+  }
+
+  if (mappedIndex < 0)
+  {
+    fallbackToDefaultEye();
+    return;
+  }
+
+  if (static_cast<size_t>(mappedIndex) >= gifProgramCount)
+  {
+    fallbackToDefaultEye();
+    return;
+  }
+
+  enterProgram(static_cast<size_t>(mappedIndex));
+}
+
+void prepareMappedProgram(int16_t mappedIndex)
+{
+  if (mappedIndex == -2)
+  {
+#if defined(ENABLE_HYPNO_SPIRAL)
+    if (!hypnoInitialized)
+    {
+      hypnoSetup();
+      hypnoInitialized = true;
+    }
+#endif
+    return;
+  }
+
+  if (mappedIndex < 0)
+  {
+    return;
+  }
+
+  if (static_cast<size_t>(mappedIndex) >= gifProgramCount)
+  {
+    return;
+  }
+
+  (void)animatedGifOpenAtIndex(static_cast<size_t>(mappedIndex));
+}
+
+void requestMappedProgram(int16_t mappedIndex)
+{
+  if (mappedIndex == -2)
+  {
+#if !defined(ENABLE_HYPNO_SPIRAL)
+    mappedIndex = -1;
+#endif
+  }
+
+  if (mappedIndex >= 0 && static_cast<size_t>(mappedIndex) >= gifProgramCount)
+  {
+    mappedIndex = -1;
+  }
+
+#if defined(ENABLE_SWIRL_TRANSITION)
+  if (SWIRL_TRANSITION_DURATION_MS > 0)
+  {
+    if (!g_swirlTransition.active && mappedIndex == activeMappedIndex)
+    {
+      return;
+    }
+
+    if (g_swirlTransition.active && mappedIndex == g_swirlTransition.targetMappedIndex)
+    {
+      return;
+    }
+
+    g_swirlTransition.active = true;
+    g_swirlTransition.targetMappedIndex = mappedIndex;
+    g_swirlTransition.startMs = millis();
+    g_swirlTransition.lastFrameMs = 0;
+
+#if defined(ENABLE_HYPNO_SPIRAL)
+    if (!hypnoInitialized)
+    {
+      hypnoSetup();
+      hypnoInitialized = true;
+    }
+    setProgramRotation(ProgramMode::Hypno);
+    hypnoStep();
+    g_swirlTransition.lastFrameMs = g_swirlTransition.startMs;
+#endif
+
+    prepareMappedProgram(mappedIndex);
+    return;
+  }
+#endif
+
+  if (mappedIndex == activeMappedIndex)
+  {
+    return;
+  }
+
+  applyMappedProgramImmediate(mappedIndex);
+  renderFirstFrame();
+}
+
+bool swirlTransitionActive(uint32_t now)
+{
+#if !defined(ENABLE_SWIRL_TRANSITION)
+  (void)now;
+  return false;
+#else
+  if (!g_swirlTransition.active)
+  {
+    return false;
+  }
+
+  if (SWIRL_TRANSITION_FRAME_MS > 0 &&
+      (g_swirlTransition.lastFrameMs == 0 ||
+       (now - g_swirlTransition.lastFrameMs) >= SWIRL_TRANSITION_FRAME_MS))
+  {
+#if defined(ENABLE_HYPNO_SPIRAL)
+    setProgramRotation(ProgramMode::Hypno);
+    hypnoStep();
+#endif
+    g_swirlTransition.lastFrameMs = now;
+  }
+
+  if ((now - g_swirlTransition.startMs) >= SWIRL_TRANSITION_DURATION_MS)
+  {
+    g_swirlTransition.active = false;
+    applyMappedProgramImmediate(g_swirlTransition.targetMappedIndex);
+    renderFirstFrame();
+  }
+
+  return true;
+#endif
 }
 } // namespace
 #endif
@@ -207,36 +402,7 @@ void applyMappedProgram(uint8_t effect)
 {
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   const int16_t index = mapEffectToProgram(effect);
-
-  if (index == -2)
-  {
-#if defined(ENABLE_HYPNO_SPIRAL)
-    if (!hypnoInitialized)
-    {
-      hypnoSetup();
-      hypnoInitialized = true;
-    }
-    currentProgram = ProgramMode::Hypno;
-    setProgramRotation(currentProgram);
-    gfx->fillScreen(HYPNO_BACKGROUND_COLOR);
-    return;
-#else
-    fallbackToDefaultEye();
-    return;
-#endif
-  }
-
-  if (index < 0)
-  {
-    fallbackToDefaultEye();
-    return;
-  }
-  if (static_cast<size_t>(index) >= gifProgramCount)
-  {
-    fallbackToDefaultEye();
-    return;
-  }
-  enterProgram(static_cast<size_t>(index));
+  requestMappedProgram(index);
 #elif defined(ENABLE_ANIMATED_GIF)
   const int16_t index = mapEffectToProgram(effect);
   if (index >= 0)
@@ -508,6 +674,10 @@ void loop()
   bleSyncLoop();
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   const uint32_t now = millis();
+  if (swirlTransitionActive(now))
+  {
+    return;
+  }
   if (kEnableAutoSwitch && !bleSyncHasLock() && ANIMATED_GIF_SWITCH_INTERVAL_MS > 0 &&
       (now - programStartMs) >= ANIMATED_GIF_SWITCH_INTERVAL_MS)
   {
