@@ -5,6 +5,7 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include <NimBLEDevice.h>
+#include <Preferences.h>
 #include <esp_random.h>
 #endif
 
@@ -476,8 +477,34 @@ uint64_t packGroup48(const uint8_t *group)
   return value;
 }
 
+void unpackGroup48(uint64_t value, uint8_t out[6])
+{
+  for (int8_t i = 5; i >= 0; --i)
+  {
+    out[i] = static_cast<uint8_t>(value & 0xFF);
+    value >>= 8;
+  }
+}
+
+void formatGroup48(uint64_t value, char out[13])
+{
+  uint8_t group[6] = {0};
+  unpackGroup48(value, group);
+  snprintf(out, 13, "%02x%02x%02x%02x%02x%02x", group[0], group[1], group[2],
+           group[3], group[4], group[5]);
+}
+
+volatile bool g_bleLearnMode = false;
+volatile uint32_t g_bleLearnModeUntilMs = 0;
+volatile bool g_bleGroupSavePending = false;
+
 bool g_bleGroupFilterEnabled = false;
 uint64_t g_bleGroupFilterKey = 0;
+
+#if VISUALREMOTE_STORE_GROUP_FILTER
+constexpr const char *kBlePrefsNamespace = "roundeyes";
+constexpr const char *kBlePrefsKeyGroup = "blegrp";
+#endif
 
 int8_t hexNibble(char c)
 {
@@ -519,8 +546,145 @@ bool mac12ToBytes(const char *mac12, uint8_t out[6])
   return true;
 }
 
+bool loadStoredBleGroupFilter(uint64_t &outGroupKey)
+{
+#if !VISUALREMOTE_STORE_GROUP_FILTER
+  (void)outGroupKey;
+  return false;
+#else
+  Preferences prefs;
+  if (!prefs.begin(kBlePrefsNamespace, /*readOnly=*/true))
+  {
+    return false;
+  }
+
+  uint8_t group[6] = {0};
+  constexpr size_t expected = sizeof(group);
+  if (prefs.getBytesLength(kBlePrefsKeyGroup) != expected)
+  {
+    prefs.end();
+    return false;
+  }
+
+  const size_t read = prefs.getBytes(kBlePrefsKeyGroup, group, expected);
+  prefs.end();
+  if (read != expected)
+  {
+    return false;
+  }
+
+  outGroupKey = packGroup48(group);
+  return true;
+#endif
+}
+
+bool saveStoredBleGroupFilter(uint64_t groupKey)
+{
+#if !VISUALREMOTE_STORE_GROUP_FILTER
+  (void)groupKey;
+  return false;
+#else
+  uint8_t group[6] = {0};
+  unpackGroup48(groupKey, group);
+
+  Preferences prefs;
+  if (!prefs.begin(kBlePrefsNamespace, /*readOnly=*/false))
+  {
+    return false;
+  }
+
+  constexpr size_t expected = sizeof(group);
+  const size_t wrote = prefs.putBytes(kBlePrefsKeyGroup, group, expected);
+  prefs.end();
+  return wrote == expected;
+#endif
+}
+
+void setBleGroupFilter(uint64_t groupKey, bool persist)
+{
+  if (groupKey == 0)
+  {
+    return;
+  }
+
+  g_bleGroupFilterKey = groupKey;
+  g_bleGroupFilterEnabled = true;
+
+  char groupText[13] = {0};
+  formatGroup48(groupKey, groupText);
+  Serial.printf("BLE group filter set: %s\n", groupText);
+
+#if VISUALREMOTE_STORE_GROUP_FILTER
+  if (persist)
+  {
+    if (!saveStoredBleGroupFilter(groupKey))
+    {
+      Serial.println("BLE group filter save failed");
+    }
+  }
+#else
+  (void)persist;
+#endif
+}
+
+void startBleLearnMode()
+{
+  if (VISUALREMOTE_PAIR_WINDOW_MS == 0)
+  {
+    return;
+  }
+
+  g_bleLearnMode = true;
+  g_bleLearnModeUntilMs = millis() + VISUALREMOTE_PAIR_WINDOW_MS;
+  Serial.printf("BLE pairing window: %lu ms (press preset now)\n",
+                static_cast<unsigned long>(VISUALREMOTE_PAIR_WINDOW_MS));
+}
+
+void blePairButtonLoop()
+{
+  if (VISUALREMOTE_PAIR_BUTTON_PIN < 0 || VISUALREMOTE_PAIR_WINDOW_MS == 0 ||
+      VISUALREMOTE_PAIR_HOLD_MS == 0)
+  {
+    return;
+  }
+
+  static bool wasPressed = false;
+  static bool triggered = false;
+  static uint32_t pressedSinceMs = 0;
+
+  const bool pressed = (digitalRead(VISUALREMOTE_PAIR_BUTTON_PIN) == LOW);
+  const uint32_t now = millis();
+
+  if (pressed != wasPressed)
+  {
+    wasPressed = pressed;
+    triggered = false;
+    pressedSinceMs = now;
+  }
+
+  if (pressed && !triggered && (now - pressedSinceMs) >= VISUALREMOTE_PAIR_HOLD_MS)
+  {
+    triggered = true;
+    startBleLearnMode();
+  }
+}
+
 void initBleGroupFilter()
 {
+#if VISUALREMOTE_STORE_GROUP_FILTER
+  uint64_t storedGroupKey = 0;
+  if (loadStoredBleGroupFilter(storedGroupKey))
+  {
+    g_bleGroupFilterKey = storedGroupKey;
+    g_bleGroupFilterEnabled = true;
+
+    char groupText[13] = {0};
+    formatGroup48(storedGroupKey, groupText);
+    Serial.printf("BLE group filter loaded: %s\n", groupText);
+    return;
+  }
+#endif
+
   const char *filter = VISUALREMOTE_GROUP_FILTER;
   if (!filter || strlen(filter) != 12)
   {
@@ -568,13 +732,14 @@ class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
     if (data.size() >= kBlePayloadPresetLen)
     {
       const uint8_t flags = bytes[4];
+      const bool learnMode = g_bleLearnMode;
       if ((flags & kBleMsgMask) != kBleMsgPreset)
       {
         return;
       }
       const uint16_t seq = bytes[5] | (uint16_t(bytes[6]) << 8);
       const uint64_t groupKey = packGroup48(bytes + 12);
-      if (g_bleGroupFilterEnabled && groupKey != g_bleGroupFilterKey)
+      if (!learnMode && g_bleGroupFilterEnabled && groupKey != g_bleGroupFilterKey)
       {
         return;
       }
@@ -587,8 +752,16 @@ class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
       g_bleLastGroup = groupKey;
       g_bleLastKind = flags;
 
+      if (learnMode && groupKey != 0)
+      {
+        g_bleLearnMode = false;
+        g_bleGroupFilterEnabled = true;
+        g_bleGroupFilterKey = groupKey;
+        g_bleGroupSavePending = true;
+      }
+
 #if !VISUALREMOTE_ACCEPT_GLOBAL_PRESETS
-      if (flags & kBleFlagGlobal)
+      if (!learnMode && (flags & kBleFlagGlobal))
       {
         return;
       }
@@ -636,6 +809,12 @@ void bleSyncSetup()
   NimBLEDevice::init("RoundEyes");
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
   initBleGroupFilter();
+
+  if (VISUALREMOTE_PAIR_BUTTON_PIN >= 0)
+  {
+    pinMode(VISUALREMOTE_PAIR_BUTTON_PIN, INPUT_PULLUP);
+  }
+
   NimBLEScan *scan = NimBLEDevice::getScan();
   scan->setAdvertisedDeviceCallbacks(new BleSyncCallbacks(), true);
   scan->setActiveScan(false);
@@ -646,13 +825,32 @@ void bleSyncSetup()
 
 void bleSyncLoop()
 {
+  blePairButtonLoop();
+
+  if (g_bleLearnMode && VISUALREMOTE_PAIR_WINDOW_MS > 0 &&
+      (int32_t)(millis() - g_bleLearnModeUntilMs) >= 0)
+  {
+    g_bleLearnMode = false;
+    Serial.println("BLE pairing window expired");
+  }
+
   if (!g_blePending)
   {
     return;
   }
-  g_blePending = false;
   const uint8_t effect = g_bleEffect;
   const uint32_t timebase = g_bleTimebase;
+  const uint64_t groupKey = g_bleLastGroup;
+  g_blePending = false;
+
+  if (g_bleGroupSavePending)
+  {
+    g_bleGroupSavePending = false;
+    if (groupKey != 0)
+    {
+      setBleGroupFilter(groupKey, /*persist=*/true);
+    }
+  }
 
   const int16_t mapped = mapEffectToProgram(effect);
   Serial.printf("BLE preset: %u -> map %d timebase %lu\n", effect, mapped,

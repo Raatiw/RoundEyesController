@@ -29,6 +29,30 @@
 #define VISUALREMOTE_GROUP_FILTER ""
 #endif
 
+// Hold the BOOT button for `VISUALREMOTE_PAIR_HOLD_MS` to open a short
+// "pairing" window where the next received VisualRemote packet will be used to
+// learn + persist the group filter.
+#ifndef VISUALREMOTE_PAIR_BUTTON_PIN
+  #if defined(BUTTON)
+    #define VISUALREMOTE_PAIR_BUTTON_PIN BUTTON
+  #else
+    #define VISUALREMOTE_PAIR_BUTTON_PIN -1
+  #endif
+#endif
+
+#ifndef VISUALREMOTE_PAIR_HOLD_MS
+#define VISUALREMOTE_PAIR_HOLD_MS 1500
+#endif
+
+#ifndef VISUALREMOTE_PAIR_WINDOW_MS
+#define VISUALREMOTE_PAIR_WINDOW_MS 10000
+#endif
+
+// Persist learned group filters in ESP32 NVS (Preferences).
+#ifndef VISUALREMOTE_STORE_GROUP_FILTER
+#define VISUALREMOTE_STORE_GROUP_FILTER 1
+#endif
+
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 240

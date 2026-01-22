@@ -41,6 +41,7 @@ Payload layout (18 bytes, little-endian): `company(2) appId(2) flags(1) seq(2) p
 Configuration lives in `include/config.h`:
 - `VISUALREMOTE_ACCEPT_GLOBAL_PRESETS` (default 0) controls whether "global" preset broadcasts are accepted.
 - `VISUALREMOTE_GROUP_FILTER` can be set to a 12-hex-digit group ID (e.g. `"aabbccddeeff"`) to only react to that group.
+- Hold the pairing button (`VISUALREMOTE_PAIR_BUTTON_PIN`) for `VISUALREMOTE_PAIR_HOLD_MS` to enter a pairing window (`VISUALREMOTE_PAIR_WINDOW_MS`). The first received packet during that window is stored (NVS) and becomes the new group filter.
 
 ## Animation Modes
 
