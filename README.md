@@ -32,6 +32,16 @@ pio run -t upload
 ```
 Ensure the board is in the correct download mode before flashing (double-tap reset).
 
+## BLE Control (WLED VisualRemote)
+
+When used with the WLED `VisualRemote` usermod, the controller broadcasts a BLE manufacturer payload containing a preset ID. This firmware listens for those broadcasts and maps the preset number via `mapEffectToProgram()` in `src/main.cpp`.
+
+Payload layout (18 bytes, little-endian): `company(2) appId(2) flags(1) seq(2) preset(1) timebase(4) group(6)`.
+
+Configuration lives in `include/config.h`:
+- `VISUALREMOTE_ACCEPT_GLOBAL_PRESETS` (default 0) controls whether "global" preset broadcasts are accepted.
+- `VISUALREMOTE_GROUP_FILTER` can be set to a 12-hex-digit group ID (e.g. `"aabbccddeeff"`) to only react to that group.
+
 ## Animation Modes
 
 Animation selection lives in `include/config.h`:

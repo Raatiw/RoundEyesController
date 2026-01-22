@@ -13,6 +13,22 @@
 #define SWIRL_TRANSITION_DURATION_MS 500
 #define SWIRL_TRANSITION_FRAME_MS 33
 
+// BLE control (WLED VisualRemote usermod) ------------------------------
+// VisualRemote broadcasts a manufacturer-data payload containing a preset ID.
+// This firmware maps that preset number onto eye/GIF programs.
+// - Set `VISUALREMOTE_ACCEPT_GLOBAL_PRESETS` to 1 to also react to the "global"
+//   (WLED-to-WLED) preset broadcasts.
+// - Set `VISUALREMOTE_GROUP_FILTER` to a 12-hex-digit string (e.g.
+//   "aabbccddeeff") to only accept presets for that group; leave empty to
+//   accept any group.
+#ifndef VISUALREMOTE_ACCEPT_GLOBAL_PRESETS
+#define VISUALREMOTE_ACCEPT_GLOBAL_PRESETS 0
+#endif
+
+#ifndef VISUALREMOTE_GROUP_FILTER
+#define VISUALREMOTE_GROUP_FILTER ""
+#endif
+
 // Common display hardware settings -----------------------------------
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 240

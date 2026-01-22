@@ -449,17 +449,97 @@ void applyMappedProgram(uint8_t effect)
 constexpr uint16_t kBleCompanyId = 0xFFFF;
 constexpr uint8_t kBleAppId0 = 'V';
 constexpr uint8_t kBleAppId1 = 'R';
-constexpr uint8_t kBleTypeSync = 1;
-constexpr uint8_t kBleTypeEye = 2;
+constexpr uint8_t kBleLegacyTypeSync = 1;
+constexpr uint8_t kBleLegacyTypeEye = 2;
+
+constexpr uint8_t kBleMsgMask = 0x0F;
+constexpr uint8_t kBleMsgPreset = 1;
+constexpr uint8_t kBleFlagGlobal = 0x80;
+constexpr size_t kBlePayloadPresetLen = 18;
 
 volatile bool g_blePending = false;
 volatile uint8_t g_bleEffect = 0;
-volatile uint8_t g_bleType = 0;
 volatile uint32_t g_bleTimebase = 0;
-uint16_t g_bleLastSeqSync = 0xFFFF;
-uint16_t g_bleLastSeqEye = 0xFFFF;
+uint16_t g_bleLastSeq = 0xFFFF;
+uint64_t g_bleLastGroup = 0;
+uint8_t g_bleLastKind = 0;
 volatile uint32_t g_bleLastMs = 0;
 bool g_bleHasSync = false;
+
+uint64_t packGroup48(const uint8_t *group)
+{
+  uint64_t value = 0;
+  for (uint8_t i = 0; i < 6; ++i)
+  {
+    value = (value << 8) | uint64_t(group[i]);
+  }
+  return value;
+}
+
+bool g_bleGroupFilterEnabled = false;
+uint64_t g_bleGroupFilterKey = 0;
+
+int8_t hexNibble(char c)
+{
+  if (c >= '0' && c <= '9')
+  {
+    return c - '0';
+  }
+  if (c >= 'a' && c <= 'f')
+  {
+    return (c - 'a') + 10;
+  }
+  if (c >= 'A' && c <= 'F')
+  {
+    return (c - 'A') + 10;
+  }
+  return -1;
+}
+
+bool mac12ToBytes(const char *mac12, uint8_t out[6])
+{
+  if (!mac12)
+  {
+    return false;
+  }
+  if (strlen(mac12) != 12)
+  {
+    return false;
+  }
+  for (uint8_t i = 0; i < 6; ++i)
+  {
+    const int8_t hi = hexNibble(mac12[i * 2]);
+    const int8_t lo = hexNibble(mac12[i * 2 + 1]);
+    if (hi < 0 || lo < 0)
+    {
+      return false;
+    }
+    out[i] = (uint8_t(hi) << 4) | uint8_t(lo);
+  }
+  return true;
+}
+
+void initBleGroupFilter()
+{
+  const char *filter = VISUALREMOTE_GROUP_FILTER;
+  if (!filter || strlen(filter) != 12)
+  {
+    g_bleGroupFilterEnabled = false;
+    return;
+  }
+
+  uint8_t group[6] = {0};
+  if (!mac12ToBytes(filter, group))
+  {
+    Serial.printf("BLE group filter invalid: %s\n", filter);
+    g_bleGroupFilterEnabled = false;
+    return;
+  }
+
+  g_bleGroupFilterKey = packGroup48(group);
+  g_bleGroupFilterEnabled = true;
+  Serial.printf("BLE group filter enabled: %s\n", filter);
+}
 
 class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
 {
@@ -484,41 +564,70 @@ class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
     {
       return;
     }
-    const uint8_t type = bytes[4];
-    const uint16_t seq = bytes[5] | (uint16_t(bytes[6]) << 8);
-    const uint8_t effect = bytes[7];
 
-    if (type == kBleTypeSync)
+    if (data.size() >= kBlePayloadPresetLen)
     {
-      if (seq == g_bleLastSeqSync)
+      const uint8_t flags = bytes[4];
+      if ((flags & kBleMsgMask) != kBleMsgPreset)
       {
         return;
       }
-      g_bleLastSeqSync = seq;
+      const uint16_t seq = bytes[5] | (uint16_t(bytes[6]) << 8);
+      const uint64_t groupKey = packGroup48(bytes + 12);
+      if (g_bleGroupFilterEnabled && groupKey != g_bleGroupFilterKey)
+      {
+        return;
+      }
+      if (seq == g_bleLastSeq && groupKey == g_bleLastGroup && flags == g_bleLastKind)
+      {
+        return;
+      }
+
+      g_bleLastSeq = seq;
+      g_bleLastGroup = groupKey;
+      g_bleLastKind = flags;
+
+#if !VISUALREMOTE_ACCEPT_GLOBAL_PRESETS
+      if (flags & kBleFlagGlobal)
+      {
+        return;
+      }
+#endif
+
       const uint32_t timebase = uint32_t(bytes[8]) |
                                 (uint32_t(bytes[9]) << 8) |
                                 (uint32_t(bytes[10]) << 16) |
                                 (uint32_t(bytes[11]) << 24);
-      g_bleEffect = effect;
-      g_bleType = type;
+      g_bleEffect = bytes[7];
       g_bleTimebase = timebase;
       g_blePending = true;
       g_bleLastMs = millis();
       g_bleHasSync = true;
+      return;
     }
-    else if (type == kBleTypeEye)
+
+    const uint8_t type = bytes[4];
+    if (type != kBleLegacyTypeSync && type != kBleLegacyTypeEye)
     {
-      if (seq == g_bleLastSeqEye)
-      {
-        return;
-      }
-      g_bleLastSeqEye = seq;
-      g_bleEffect = effect;
-      g_bleType = type;
-      g_bleTimebase = 0;
-      g_blePending = true;
-      g_bleLastMs = millis();
+      return;
     }
+    const uint16_t seq = bytes[5] | (uint16_t(bytes[6]) << 8);
+    if (seq == g_bleLastSeq && type == g_bleLastKind)
+    {
+      return;
+    }
+
+    g_bleLastSeq = seq;
+    g_bleLastGroup = 0;
+    g_bleLastKind = type;
+    g_bleEffect = bytes[7];
+    g_bleTimebase = uint32_t(bytes[8]) |
+                    (uint32_t(bytes[9]) << 8) |
+                    (uint32_t(bytes[10]) << 16) |
+                    (uint32_t(bytes[11]) << 24);
+    g_blePending = true;
+    g_bleLastMs = millis();
+    g_bleHasSync = true;
   }
 };
 
@@ -526,6 +635,7 @@ void bleSyncSetup()
 {
   NimBLEDevice::init("RoundEyes");
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  initBleGroupFilter();
   NimBLEScan *scan = NimBLEDevice::getScan();
   scan->setAdvertisedDeviceCallbacks(new BleSyncCallbacks(), true);
   scan->setActiveScan(false);
@@ -542,22 +652,12 @@ void bleSyncLoop()
   }
   g_blePending = false;
   const uint8_t effect = g_bleEffect;
-  const uint8_t type = g_bleType;
   const uint32_t timebase = g_bleTimebase;
 
-  if (type == kBleTypeSync)
-  {
-    const int16_t mapped = mapEffectToProgram(effect);
-    Serial.printf("BLE sync: effect %u -> map %d timebase %lu\n", effect, mapped,
-                  static_cast<unsigned long>(timebase));
-    applyMappedProgram(effect);
-  }
-  else if (type == kBleTypeEye)
-  {
-    const int16_t mapped = mapEffectToProgram(effect);
-    Serial.printf("BLE eye: effect %u -> map %d\n", effect, mapped);
-    applyMappedProgram(effect);
-  }
+  const int16_t mapped = mapEffectToProgram(effect);
+  Serial.printf("BLE preset: %u -> map %d timebase %lu\n", effect, mapped,
+                static_cast<unsigned long>(timebase));
+  applyMappedProgram(effect);
 }
 
 bool bleSyncHasLock()
