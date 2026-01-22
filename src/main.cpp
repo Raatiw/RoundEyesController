@@ -86,6 +86,7 @@ struct SwirlTransitionState
   int16_t targetMappedIndex = -1;
   uint32_t startMs = 0;
   uint32_t lastFrameMs = 0;
+  bool targetPrepared = false;
 };
 
 SwirlTransitionState g_swirlTransition;
@@ -280,6 +281,7 @@ void requestMappedProgram(int16_t mappedIndex)
     g_swirlTransition.targetMappedIndex = mappedIndex;
     g_swirlTransition.startMs = millis();
     g_swirlTransition.lastFrameMs = 0;
+    g_swirlTransition.targetPrepared = false;
 
 #if defined(ENABLE_HYPNO_SPIRAL)
     if (!hypnoInitialized)
@@ -293,6 +295,7 @@ void requestMappedProgram(int16_t mappedIndex)
 #endif
 
     prepareMappedProgram(mappedIndex);
+    g_swirlTransition.targetPrepared = true;
     return;
   }
 #endif
@@ -328,7 +331,15 @@ bool swirlTransitionActive(uint32_t now)
     g_swirlTransition.lastFrameMs = now;
   }
 
-  if ((now - g_swirlTransition.startMs) >= SWIRL_TRANSITION_DURATION_MS)
+  const uint32_t elapsed = now - g_swirlTransition.startMs;
+  uint32_t minDuration = SWIRL_TRANSITION_MIN_MS;
+  uint32_t maxDuration = SWIRL_TRANSITION_DURATION_MS;
+  if (maxDuration < minDuration)
+  {
+    maxDuration = minDuration;
+  }
+
+  if ((g_swirlTransition.targetPrepared && elapsed >= minDuration) || (elapsed >= maxDuration))
   {
     g_swirlTransition.active = false;
     applyMappedProgramImmediate(g_swirlTransition.targetMappedIndex);

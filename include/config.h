@@ -10,7 +10,11 @@
 // Optional visual transition when switching effects via BLE mapping.
 // Uses the hypno spiral renderer as a short "swirl" interstitial.
 #define ENABLE_SWIRL_TRANSITION
-#define SWIRL_TRANSITION_DURATION_MS 500
+// Swirl transition shows the hypno spiral while the next program is prepared.
+// It ends early as soon as the target is ready, with the values below acting
+// as minimum/maximum bounds.
+#define SWIRL_TRANSITION_DURATION_MS 500  // max
+#define SWIRL_TRANSITION_MIN_MS 33        // min
 #define SWIRL_TRANSITION_FRAME_MS 33
 
 // BLE control (WLED VisualRemote usermod) ------------------------------
