@@ -354,6 +354,59 @@ bool swirlTransitionActive(uint32_t now)
 
 namespace
 {
+struct UiLine
+{
+  const char *text;
+  uint16_t color;
+};
+
+void drawCenteredLines(const UiLine *lines, size_t count)
+{
+  if (!lines || count == 0)
+  {
+    return;
+  }
+
+  gfx->setTextWrap(false);
+
+  int16_t x1 = 0;
+  int16_t y1 = 0;
+  uint16_t w = 0;
+  uint16_t h = 0;
+  gfx->getTextBounds("A", 0, 0, &x1, &y1, &w, &h);
+  const int16_t lineHeight = static_cast<int16_t>(h > 0 ? h : 16);
+  const int16_t linePitch = static_cast<int16_t>(lineHeight + 2);
+  const int16_t blockHeight = static_cast<int16_t>(count * linePitch - 2);
+
+  const int16_t screenWidth = gfx->width();
+  const int16_t screenHeight = gfx->height();
+  int16_t y = static_cast<int16_t>((screenHeight - blockHeight) / 2);
+  if (y < 0)
+  {
+    y = 0;
+  }
+
+  for (size_t i = 0; i < count; ++i)
+  {
+    if (!lines[i].text)
+    {
+      continue;
+    }
+
+    gfx->setTextColor(lines[i].color);
+    gfx->getTextBounds(lines[i].text, 0, 0, &x1, &y1, &w, &h);
+    int16_t x = static_cast<int16_t>((screenWidth - static_cast<int16_t>(w)) / 2);
+    if (x < 0)
+    {
+      x = 0;
+    }
+
+    gfx->setCursor(x, y);
+    gfx->print(lines[i].text);
+    y = static_cast<int16_t>(y + linePitch);
+  }
+}
+
 // Map incoming WLED effect numbers to programs.
 // - `-1` = default eye
 // - `-2` = hypno spiral
@@ -509,6 +562,20 @@ volatile bool g_bleLearnMode = false;
 volatile uint32_t g_bleLearnModeUntilMs = 0;
 volatile bool g_bleGroupSavePending = false;
 
+enum class PairUiState : uint8_t
+{
+  None,
+  Pairing,
+  Paired,
+  Timeout
+};
+
+PairUiState g_blePairUiState = PairUiState::None;
+uint32_t g_blePairUiUntilMs = 0;
+uint32_t g_blePairUiNextRefreshMs = 0;
+uint64_t g_blePairUiGroupKey = 0;
+bool g_blePairUiDirty = false;
+
 bool g_bleGroupFilterEnabled = false;
 uint64_t g_bleGroupFilterKey = 0;
 
@@ -647,6 +714,10 @@ void startBleLearnMode()
 
   g_bleLearnMode = true;
   g_bleLearnModeUntilMs = millis() + VISUALREMOTE_PAIR_WINDOW_MS;
+  g_blePairUiState = PairUiState::Pairing;
+  g_blePairUiDirty = true;
+  g_blePairUiNextRefreshMs = 0;
+  g_blePairUiUntilMs = 0;
   Serial.printf("BLE pairing window: %lu ms (press preset now)\n",
                 static_cast<unsigned long>(VISUALREMOTE_PAIR_WINDOW_MS));
 }
@@ -678,6 +749,121 @@ void blePairButtonLoop()
     triggered = true;
     startBleLearnMode();
   }
+}
+
+bool blePairingUiLoop()
+{
+  if (VISUALREMOTE_PAIR_WINDOW_MS == 0)
+  {
+    return false;
+  }
+
+  const uint32_t now = millis();
+  const bool learnMode = g_bleLearnMode;
+
+  if (learnMode)
+  {
+    if (g_blePairUiState != PairUiState::Pairing)
+    {
+      g_blePairUiState = PairUiState::Pairing;
+      g_blePairUiDirty = true;
+      g_blePairUiNextRefreshMs = 0;
+      g_blePairUiUntilMs = 0;
+    }
+  }
+  else if (g_blePairUiState == PairUiState::Pairing)
+  {
+    g_blePairUiState = PairUiState::None;
+    g_blePairUiDirty = false;
+    return false;
+  }
+
+  if (g_blePairUiState == PairUiState::None)
+  {
+    return false;
+  }
+
+  if ((g_blePairUiState == PairUiState::Paired || g_blePairUiState == PairUiState::Timeout) &&
+      VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0 && g_blePairUiUntilMs > 0 &&
+      (int32_t)(now - g_blePairUiUntilMs) >= 0)
+  {
+    g_blePairUiState = PairUiState::None;
+    g_blePairUiDirty = false;
+    return false;
+  }
+
+  const uint32_t refreshMs = VISUALREMOTE_PAIR_STATUS_REFRESH_MS;
+  if (!g_blePairUiDirty && refreshMs > 0 && g_blePairUiNextRefreshMs > 0 &&
+      (int32_t)(now - g_blePairUiNextRefreshMs) < 0)
+  {
+    return true;
+  }
+
+  g_blePairUiDirty = false;
+  g_blePairUiNextRefreshMs = (refreshMs > 0) ? (now + refreshMs) : 0;
+
+  const uint8_t prevRotation = gfx->getRotation();
+  gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
+  gfx->fillScreen(BLACK);
+  gfx->setTextSize(2);
+
+  UiLine lines[6] = {};
+  size_t lineCount = 0;
+
+  char lineTime[24] = {0};
+  char lineGroup[32] = {0};
+  char groupText[13] = {0};
+
+  switch (g_blePairUiState)
+  {
+  case PairUiState::Pairing:
+  {
+    lines[lineCount++] = UiLine{"PAIRING", WHITE};
+    lines[lineCount++] = UiLine{"Send preset now", WHITE};
+
+    const uint32_t untilMs = g_bleLearnModeUntilMs;
+    int32_t remaining = static_cast<int32_t>(untilMs - now);
+    if (remaining < 0)
+    {
+      remaining = 0;
+    }
+    const uint32_t remainingMs = static_cast<uint32_t>(remaining);
+    const uint32_t remainingTenths = (remainingMs + 99) / 100;
+    snprintf(lineTime, sizeof(lineTime), "Time: %lu.%lus",
+             static_cast<unsigned long>(remainingTenths / 10),
+             static_cast<unsigned long>(remainingTenths % 10));
+    lines[lineCount++] = UiLine{lineTime, YELLOW};
+
+    if (g_bleGroupFilterEnabled)
+    {
+      formatGroup48(g_bleGroupFilterKey, groupText);
+      snprintf(lineGroup, sizeof(lineGroup), "Current: %s", groupText);
+    }
+    else
+    {
+      snprintf(lineGroup, sizeof(lineGroup), "Current: ANY");
+    }
+    lines[lineCount++] = UiLine{lineGroup, GREEN};
+    break;
+  }
+  case PairUiState::Paired:
+    lines[lineCount++] = UiLine{"PAIRED", GREEN};
+    formatGroup48(g_blePairUiGroupKey, groupText);
+    snprintf(lineGroup, sizeof(lineGroup), "Group: %s", groupText);
+    lines[lineCount++] = UiLine{lineGroup, WHITE};
+    lines[lineCount++] = UiLine{"Saved", WHITE};
+    break;
+  case PairUiState::Timeout:
+    lines[lineCount++] = UiLine{"PAIR TIMEOUT", RED};
+    lines[lineCount++] = UiLine{"No preset received", YELLOW};
+    break;
+  default:
+    break;
+  }
+
+  drawCenteredLines(lines, lineCount);
+  gfx->setRotation(prevRotation);
+  return true;
 }
 
 void initBleGroupFilter()
@@ -843,6 +1029,17 @@ void bleSyncLoop()
   {
     g_bleLearnMode = false;
     Serial.println("BLE pairing window expired");
+    if (VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0)
+    {
+      g_blePairUiState = PairUiState::Timeout;
+      g_blePairUiUntilMs = millis() + VISUALREMOTE_PAIR_RESULT_DISPLAY_MS;
+      g_blePairUiDirty = true;
+      g_blePairUiNextRefreshMs = 0;
+    }
+    else
+    {
+      g_blePairUiState = PairUiState::None;
+    }
   }
 
   if (!g_blePending)
@@ -860,6 +1057,18 @@ void bleSyncLoop()
     if (groupKey != 0)
     {
       setBleGroupFilter(groupKey, /*persist=*/true);
+      if (VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0)
+      {
+        g_blePairUiState = PairUiState::Paired;
+        g_blePairUiGroupKey = groupKey;
+        g_blePairUiUntilMs = millis() + VISUALREMOTE_PAIR_RESULT_DISPLAY_MS;
+        g_blePairUiDirty = true;
+        g_blePairUiNextRefreshMs = 0;
+      }
+      else
+      {
+        g_blePairUiState = PairUiState::None;
+      }
     }
   }
 
@@ -877,6 +1086,7 @@ bool bleSyncHasLock()
 void bleSyncSetup() {}
 void bleSyncLoop() {}
 bool bleSyncHasLock() { return false; }
+bool blePairingUiLoop() { return false; }
 #endif
 } // namespace
 
@@ -1029,57 +1239,6 @@ void showSdBootTest()
   const uint8_t prevRotation = gfx->getRotation();
   gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
 
-  struct BootLine
-  {
-    const char *text;
-    uint16_t color;
-  };
-
-  auto drawCenteredLines = [](const BootLine *lines, size_t count)
-  {
-    if (!lines || count == 0)
-    {
-      return;
-    }
-
-    gfx->setTextWrap(false);
-
-    int16_t x1 = 0;
-    int16_t y1 = 0;
-    uint16_t w = 0;
-    uint16_t h = 0;
-    gfx->getTextBounds("A", 0, 0, &x1, &y1, &w, &h);
-    const int16_t lineHeight = static_cast<int16_t>(h > 0 ? h : 16);
-    const int16_t linePitch = static_cast<int16_t>(lineHeight + 2);
-    const int16_t blockHeight = static_cast<int16_t>(count * linePitch - 2);
-
-    const int16_t screenWidth = gfx->width();
-    const int16_t screenHeight = gfx->height();
-    int16_t y = static_cast<int16_t>((screenHeight - blockHeight) / 2);
-    if (y < 0)
-    {
-      y = 0;
-    }
-
-    for (size_t i = 0; i < count; ++i)
-    {
-      if (!lines[i].text)
-      {
-        continue;
-      }
-      gfx->setTextColor(lines[i].color);
-      gfx->getTextBounds(lines[i].text, 0, 0, &x1, &y1, &w, &h);
-      int16_t x = static_cast<int16_t>((screenWidth - static_cast<int16_t>(w)) / 2);
-      if (x < 0)
-      {
-        x = 0;
-      }
-      gfx->setCursor(x, y);
-      gfx->print(lines[i].text);
-      y = static_cast<int16_t>(y + linePitch);
-    }
-  };
-
   gfx->fillScreen(BLACK);
   gfx->setTextSize(2);
   gfx->setTextColor(WHITE);
@@ -1087,7 +1246,7 @@ void showSdBootTest()
   const uint8_t cardType = SD.cardType();
   if (cardType == CARD_NONE)
   {
-    const BootLine lines[] = {
+    const UiLine lines[] = {
         {"SD TEST", WHITE},
         {"SD FAIL", RED},
         {"No card / init", RED},
@@ -1120,27 +1279,27 @@ void showSdBootTest()
   if (hasReadSpeed)
   {
     snprintf(lineRead, sizeof(lineRead), "Read: %lu KB/s",
-             static_cast<unsigned long>(bytesPerSec / 1024UL));
+	             static_cast<unsigned long>(bytesPerSec / 1024UL));
   }
 
-  BootLine lines[8] = {};
+  UiLine lines[8] = {};
   size_t lineCount = 0;
-  lines[lineCount++] = {"SD TEST", WHITE};
-  lines[lineCount++] = {"SD OK", GREEN};
-  lines[lineCount++] = {lineType, WHITE};
+  lines[lineCount++] = UiLine{"SD TEST", WHITE};
+  lines[lineCount++] = UiLine{"SD OK", GREEN};
+  lines[lineCount++] = UiLine{lineType, WHITE};
   if (lineSize[0] != '\0')
   {
-    lines[lineCount++] = {lineSize, WHITE};
+    lines[lineCount++] = UiLine{lineSize, WHITE};
   }
-  lines[lineCount++] = {lineSpi, WHITE};
+  lines[lineCount++] = UiLine{lineSpi, WHITE};
   if (hasReadSpeed)
   {
-    lines[lineCount++] = {lineRead, WHITE};
-    lines[lineCount++] = {testPath, WHITE};
+    lines[lineCount++] = UiLine{lineRead, WHITE};
+    lines[lineCount++] = UiLine{testPath, WHITE};
   }
   else
   {
-    lines[lineCount++] = {"Read test failed", YELLOW};
+    lines[lineCount++] = UiLine{"Read test failed", YELLOW};
   }
 
   drawCenteredLines(lines, lineCount);
@@ -1274,6 +1433,10 @@ void setup()
 void loop()
 {
   bleSyncLoop();
+  if (blePairingUiLoop())
+  {
+    return;
+  }
 #if defined(ENABLE_ANIMATED_GIF) && defined(ENABLE_EYE_PROGRAM)
   const uint32_t now = millis();
   if (swirlTransitionActive(now))
