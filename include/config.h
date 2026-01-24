@@ -44,12 +44,37 @@
   #endif
 #endif
 
+// Feather ESP32 V2's `BUTTON` is GPIO38 (input-only). The board typically
+// provides external biasing for the switch, but ESP32 can't enable internal
+// pullups on GPIO34-39. Adjust these if your wiring/polarity differs.
+#ifndef VISUALREMOTE_PAIR_BUTTON_ACTIVE_LOW
+#define VISUALREMOTE_PAIR_BUTTON_ACTIVE_LOW 1
+#endif
+
+#ifndef VISUALREMOTE_PAIR_DEBUG_LOG
+#define VISUALREMOTE_PAIR_DEBUG_LOG 1
+#endif
+
 #ifndef VISUALREMOTE_PAIR_HOLD_MS
 #define VISUALREMOTE_PAIR_HOLD_MS 1500
 #endif
 
 #ifndef VISUALREMOTE_PAIR_WINDOW_MS
 #define VISUALREMOTE_PAIR_WINDOW_MS 10000
+#endif
+
+// If enabled, once pairing is entered it stays on-screen indefinitely and never
+// times out. The device must be reset to exit pairing/paired screen.
+#ifndef VISUALREMOTE_PAIR_PERSISTENT
+#define VISUALREMOTE_PAIR_PERSISTENT 1
+#endif
+
+// Feather ESP32 V2 doesn't have a readable "BOOT" button like ESP devkits.
+// The RESET button can't be read (it resets the MCU), but we can detect a
+// "double reset" (press RESET twice quickly) using RTC memory and use that to
+// enter pairing mode.
+#ifndef VISUALREMOTE_PAIR_DOUBLE_RESET_MS
+#define VISUALREMOTE_PAIR_DOUBLE_RESET_MS 1500
 #endif
 
 // Pairing UI feedback.

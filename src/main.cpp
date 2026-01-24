@@ -7,6 +7,7 @@
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 #include <esp_random.h>
+#include <esp_attr.h>
 #endif
 
 #include "eye_types.h"
@@ -558,26 +559,38 @@ void formatGroup48(uint64_t value, char out[13])
            group[3], group[4], group[5]);
 }
 
-volatile bool g_bleLearnMode = false;
-volatile uint32_t g_bleLearnModeUntilMs = 0;
-volatile bool g_bleGroupSavePending = false;
+	volatile bool g_bleLearnMode = false;
+	volatile uint32_t g_bleLearnModeUntilMs = 0;
+	volatile bool g_bleGroupSavePending = false;
 
-enum class PairUiState : uint8_t
-{
-  None,
-  Pairing,
-  Paired,
-  Timeout
-};
+// "Double reset" pairing trigger support (RESET button).
+#if VISUALREMOTE_PAIR_DOUBLE_RESET_MS > 0
+RTC_DATA_ATTR uint32_t g_bleResetTapMagic = 0;
+constexpr uint32_t kBleResetTapMagic = 0x50414952; // "PAIR"
+uint32_t g_bleResetTapClearAtMs = 0;
+#endif
 
-PairUiState g_blePairUiState = PairUiState::None;
-uint32_t g_blePairUiUntilMs = 0;
-uint32_t g_blePairUiNextRefreshMs = 0;
-uint64_t g_blePairUiGroupKey = 0;
-bool g_blePairUiDirty = false;
+	enum class PairUiState : uint8_t
+	{
+	  None,
+	  Hold,
+	  Pairing,
+	  Paired,
+	  Timeout
+	};
 
-bool g_bleGroupFilterEnabled = false;
-uint64_t g_bleGroupFilterKey = 0;
+	PairUiState g_blePairUiState = PairUiState::None;
+	uint32_t g_blePairUiUntilMs = 0;
+	uint32_t g_blePairUiNextRefreshMs = 0;
+	uint64_t g_blePairUiGroupKey = 0;
+	bool g_blePairUiDirty = false;
+
+	bool g_blePairHoldActive = false;
+	uint32_t g_blePairHoldStartMs = 0;
+	int g_blePairHoldRaw = -1;
+
+	bool g_bleGroupFilterEnabled = false;
+	uint64_t g_bleGroupFilterKey = 0;
 
 #if VISUALREMOTE_STORE_GROUP_FILTER
 constexpr const char *kBlePrefsNamespace = "roundeyes";
@@ -705,65 +718,142 @@ void setBleGroupFilter(uint64_t groupKey, bool persist)
 #endif
 }
 
-void startBleLearnMode()
-{
-  if (VISUALREMOTE_PAIR_WINDOW_MS == 0)
-  {
-    return;
-  }
+	void startBleLearnMode()
+	{
+	  if (!VISUALREMOTE_PAIR_PERSISTENT && VISUALREMOTE_PAIR_WINDOW_MS == 0)
+	  {
+	    return;
+	  }
 
-  g_bleLearnMode = true;
-  g_bleLearnModeUntilMs = millis() + VISUALREMOTE_PAIR_WINDOW_MS;
-  g_blePairUiState = PairUiState::Pairing;
-  g_blePairUiDirty = true;
-  g_blePairUiNextRefreshMs = 0;
-  g_blePairUiUntilMs = 0;
-  Serial.printf("BLE pairing window: %lu ms (press preset now)\n",
-                static_cast<unsigned long>(VISUALREMOTE_PAIR_WINDOW_MS));
-}
+	  g_bleLearnMode = true;
+	  g_bleLearnModeUntilMs =
+	      (VISUALREMOTE_PAIR_PERSISTENT || VISUALREMOTE_PAIR_WINDOW_MS == 0)
+	          ? 0
+	          : (millis() + VISUALREMOTE_PAIR_WINDOW_MS);
+	  g_blePairUiState = PairUiState::Pairing;
+	  g_blePairUiDirty = true;
+	  g_blePairUiNextRefreshMs = 0;
+	  g_blePairUiUntilMs = 0;
+#if VISUALREMOTE_PAIR_DEBUG_LOG
+	  Serial.printf("BLE pair: learn mode start, window=%lu ms\n",
+	                static_cast<unsigned long>(VISUALREMOTE_PAIR_WINDOW_MS));
+#endif
+	  Serial.printf("BLE pairing window: %lu ms (press preset now)\n",
+	                static_cast<unsigned long>(VISUALREMOTE_PAIR_WINDOW_MS));
+	}
 
-void blePairButtonLoop()
-{
-  if (VISUALREMOTE_PAIR_BUTTON_PIN < 0 || VISUALREMOTE_PAIR_WINDOW_MS == 0 ||
-      VISUALREMOTE_PAIR_HOLD_MS == 0)
-  {
-    return;
-  }
+	bool bleWasDoubleReset()
+	{
+#if VISUALREMOTE_PAIR_DOUBLE_RESET_MS == 0
+	  return false;
+#else
+	  if (g_bleResetTapMagic == kBleResetTapMagic)
+	  {
+	    g_bleResetTapMagic = 0;
+	    g_bleResetTapClearAtMs = 0;
+	    return true;
+	  }
 
-  static bool wasPressed = false;
-  static bool triggered = false;
-  static uint32_t pressedSinceMs = 0;
+	  g_bleResetTapMagic = kBleResetTapMagic;
+	  g_bleResetTapClearAtMs = millis() + VISUALREMOTE_PAIR_DOUBLE_RESET_MS;
+	  return false;
+#endif
+	}
 
-  const bool pressed = (digitalRead(VISUALREMOTE_PAIR_BUTTON_PIN) == LOW);
-  const uint32_t now = millis();
+	void bleResetTapLoop()
+	{
+#if VISUALREMOTE_PAIR_DOUBLE_RESET_MS > 0
+	  if (g_bleResetTapClearAtMs > 0 &&
+	      (int32_t)(millis() - g_bleResetTapClearAtMs) >= 0)
+	  {
+	    g_bleResetTapMagic = 0;
+	    g_bleResetTapClearAtMs = 0;
+	  }
+#endif
+	}
 
-  if (pressed != wasPressed)
-  {
-    wasPressed = pressed;
-    triggered = false;
-    pressedSinceMs = now;
-  }
+	void blePairButtonLoop()
+	{
+	  if (VISUALREMOTE_PAIR_BUTTON_PIN < 0 ||
+	      (!VISUALREMOTE_PAIR_PERSISTENT && VISUALREMOTE_PAIR_WINDOW_MS == 0) ||
+	      VISUALREMOTE_PAIR_HOLD_MS == 0)
+	  {
+	    return;
+	  }
 
-  if (pressed && !triggered && (now - pressedSinceMs) >= VISUALREMOTE_PAIR_HOLD_MS)
-  {
-    triggered = true;
-    startBleLearnMode();
-  }
-}
+	  static bool wasPressed = false;
+	  static bool triggered = false;
+	  static uint32_t pressedSinceMs = 0;
+	  static uint32_t lastLogMs = 0;
 
-bool blePairingUiLoop()
-{
-  if (VISUALREMOTE_PAIR_WINDOW_MS == 0)
-  {
-    return false;
-  }
+	  const uint32_t now = millis();
+	  const int raw = digitalRead(VISUALREMOTE_PAIR_BUTTON_PIN);
+	  g_blePairHoldRaw = raw;
+	  const bool pressed = VISUALREMOTE_PAIR_BUTTON_ACTIVE_LOW ? (raw == LOW) : (raw == HIGH);
+	  g_blePairHoldActive = pressed;
 
-  const uint32_t now = millis();
-  const bool learnMode = g_bleLearnMode;
+	  if (pressed != wasPressed)
+	  {
+	    wasPressed = pressed;
+	    triggered = false;
+	    pressedSinceMs = now;
+	    if (pressed)
+	    {
+	      g_blePairHoldStartMs = now;
+	    }
+#if VISUALREMOTE_PAIR_DEBUG_LOG
+	    Serial.printf("BLE pair btn: gpio=%d raw=%d pressed=%d\n",
+	                  VISUALREMOTE_PAIR_BUTTON_PIN, raw, pressed ? 1 : 0);
+#endif
 
-  if (learnMode)
-  {
-    if (g_blePairUiState != PairUiState::Pairing)
+	    if (!pressed && g_blePairUiState == PairUiState::Hold)
+	    {
+	      g_blePairUiState = PairUiState::None;
+	      g_blePairUiDirty = true;
+	      g_blePairUiNextRefreshMs = 0;
+	    }
+	  }
+
+	  if (pressed && !triggered && g_blePairUiState == PairUiState::None)
+	  {
+	    g_blePairUiState = PairUiState::Hold;
+	    g_blePairUiDirty = true;
+	    g_blePairUiNextRefreshMs = 0;
+	    g_blePairUiUntilMs = 0;
+	  }
+
+	  if (pressed && !triggered && VISUALREMOTE_PAIR_DEBUG_LOG && (now - lastLogMs) >= 250)
+	  {
+	    lastLogMs = now;
+	    Serial.printf("BLE pair btn: holding %lu/%lu ms raw=%d\n",
+	                  static_cast<unsigned long>(now - pressedSinceMs),
+	                  static_cast<unsigned long>(VISUALREMOTE_PAIR_HOLD_MS), raw);
+	  }
+
+	  if (pressed && !triggered && (now - pressedSinceMs) >= VISUALREMOTE_PAIR_HOLD_MS)
+	  {
+	    triggered = true;
+#if VISUALREMOTE_PAIR_DEBUG_LOG
+	    Serial.printf("BLE pair: hold met (%lu ms), entering learn mode\n",
+	                  static_cast<unsigned long>(now - pressedSinceMs));
+#endif
+	    startBleLearnMode();
+	  }
+	}
+
+	bool blePairingUiLoop()
+	{
+	  if (!VISUALREMOTE_PAIR_PERSISTENT && VISUALREMOTE_PAIR_WINDOW_MS == 0)
+	  {
+	    return false;
+	  }
+
+	  const uint32_t now = millis();
+	  const bool learnMode = g_bleLearnMode;
+
+	  if (learnMode)
+	  {
+	    if (g_blePairUiState != PairUiState::Pairing)
     {
       g_blePairUiState = PairUiState::Pairing;
       g_blePairUiDirty = true;
@@ -771,24 +861,25 @@ bool blePairingUiLoop()
       g_blePairUiUntilMs = 0;
     }
   }
-  else if (g_blePairUiState == PairUiState::Pairing)
-  {
-    g_blePairUiState = PairUiState::None;
-    g_blePairUiDirty = false;
-    return false;
-  }
+	  else if (g_blePairUiState == PairUiState::Pairing)
+	  {
+	    g_blePairUiState = PairUiState::None;
+	    g_blePairUiDirty = false;
+	    return false;
+	  }
 
   if (g_blePairUiState == PairUiState::None)
   {
     return false;
   }
 
-  if ((g_blePairUiState == PairUiState::Paired || g_blePairUiState == PairUiState::Timeout) &&
-      VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0 && g_blePairUiUntilMs > 0 &&
-      (int32_t)(now - g_blePairUiUntilMs) >= 0)
-  {
-    g_blePairUiState = PairUiState::None;
-    g_blePairUiDirty = false;
+	  if ((g_blePairUiState == PairUiState::Paired || g_blePairUiState == PairUiState::Timeout) &&
+	      !VISUALREMOTE_PAIR_PERSISTENT && VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0 &&
+	      g_blePairUiUntilMs > 0 &&
+	      (int32_t)(now - g_blePairUiUntilMs) >= 0)
+	  {
+	    g_blePairUiState = PairUiState::None;
+	    g_blePairUiDirty = false;
     return false;
   }
 
@@ -814,25 +905,53 @@ bool blePairingUiLoop()
   char lineGroup[32] = {0};
   char groupText[13] = {0};
 
-  switch (g_blePairUiState)
-  {
-  case PairUiState::Pairing:
-  {
-    lines[lineCount++] = UiLine{"PAIRING", WHITE};
-    lines[lineCount++] = UiLine{"Send preset now", WHITE};
+	  switch (g_blePairUiState)
+	  {
+	  case PairUiState::Hold:
+	  {
+	    lines[lineCount++] = UiLine{"HOLD TO PAIR", WHITE};
+	    lines[lineCount++] = UiLine{"Keep button down", WHITE};
 
-    const uint32_t untilMs = g_bleLearnModeUntilMs;
-    int32_t remaining = static_cast<int32_t>(untilMs - now);
-    if (remaining < 0)
-    {
-      remaining = 0;
-    }
-    const uint32_t remainingMs = static_cast<uint32_t>(remaining);
-    const uint32_t remainingTenths = (remainingMs + 99) / 100;
-    snprintf(lineTime, sizeof(lineTime), "Time: %lu.%lus",
-             static_cast<unsigned long>(remainingTenths / 10),
-             static_cast<unsigned long>(remainingTenths % 10));
-    lines[lineCount++] = UiLine{lineTime, YELLOW};
+	    const int rawNow = g_blePairHoldRaw;
+	    const bool pressedNow = g_blePairHoldActive;
+
+	    char lineBtn[28] = {0};
+	    snprintf(lineBtn, sizeof(lineBtn), "BTN raw: %d", rawNow);
+	    lines[lineCount++] = UiLine{lineBtn, static_cast<uint16_t>(pressedNow ? GREEN : RED)};
+
+	    const uint32_t heldMs = (pressedNow && g_blePairHoldStartMs > 0) ? (now - g_blePairHoldStartMs) : 0;
+	    const uint32_t targetMs = VISUALREMOTE_PAIR_HOLD_MS;
+	    char lineHold[28] = {0};
+	    snprintf(lineHold, sizeof(lineHold), "Hold: %lu/%lu ms",
+	             static_cast<unsigned long>(heldMs),
+	             static_cast<unsigned long>(targetMs));
+	    lines[lineCount++] = UiLine{lineHold, YELLOW};
+	    break;
+	  }
+	  case PairUiState::Pairing:
+	  {
+	    lines[lineCount++] = UiLine{"PAIRING", WHITE};
+	    lines[lineCount++] = UiLine{"Send preset now", WHITE};
+
+	    if (VISUALREMOTE_PAIR_PERSISTENT || VISUALREMOTE_PAIR_WINDOW_MS == 0 || g_bleLearnModeUntilMs == 0)
+	    {
+	      snprintf(lineTime, sizeof(lineTime), "Time: INF");
+	    }
+	    else
+	    {
+	      const uint32_t untilMs = g_bleLearnModeUntilMs;
+	      int32_t remaining = static_cast<int32_t>(untilMs - now);
+	      if (remaining < 0)
+	      {
+	        remaining = 0;
+	      }
+	      const uint32_t remainingMs = static_cast<uint32_t>(remaining);
+	      const uint32_t remainingTenths = (remainingMs + 99) / 100;
+	      snprintf(lineTime, sizeof(lineTime), "Time: %lu.%lus",
+	               static_cast<unsigned long>(remainingTenths / 10),
+	               static_cast<unsigned long>(remainingTenths % 10));
+	    }
+	    lines[lineCount++] = UiLine{lineTime, YELLOW};
 
     if (g_bleGroupFilterEnabled)
     {
@@ -844,8 +963,8 @@ bool blePairingUiLoop()
       snprintf(lineGroup, sizeof(lineGroup), "Current: ANY");
     }
     lines[lineCount++] = UiLine{lineGroup, GREEN};
-    break;
-  }
+	    break;
+	  }
   case PairUiState::Paired:
     lines[lineCount++] = UiLine{"PAIRED", GREEN};
     formatGroup48(g_blePairUiGroupKey, groupText);
@@ -1001,35 +1120,60 @@ class BleSyncCallbacks : public NimBLEAdvertisedDeviceCallbacks
   }
 };
 
-void bleSyncSetup()
-{
-  NimBLEDevice::init("RoundEyes");
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
-  initBleGroupFilter();
+	void bleSyncSetup()
+	{
+	  NimBLEDevice::init("RoundEyes");
+	  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+	  initBleGroupFilter();
 
-  if (VISUALREMOTE_PAIR_BUTTON_PIN >= 0)
-  {
-    pinMode(VISUALREMOTE_PAIR_BUTTON_PIN, INPUT_PULLUP);
-  }
+	  if (VISUALREMOTE_PAIR_BUTTON_PIN >= 0)
+	  {
+	    // ESP32 GPIO34-39 are input-only and don't support internal pullups/pulldowns.
+	    const uint8_t pin = static_cast<uint8_t>(VISUALREMOTE_PAIR_BUTTON_PIN);
+	    if (pin >= 34 && pin <= 39)
+	    {
+	      pinMode(pin, INPUT);
+	    }
+	    else
+	    {
+	      pinMode(pin, INPUT_PULLUP);
+	    }
+#if VISUALREMOTE_PAIR_DEBUG_LOG
+	    const int raw = digitalRead(VISUALREMOTE_PAIR_BUTTON_PIN);
+	    const bool pressed = VISUALREMOTE_PAIR_BUTTON_ACTIVE_LOW ? (raw == LOW) : (raw == HIGH);
+	    Serial.printf("BLE pair btn init: gpio=%d mode=%s raw=%d pressed=%d\n",
+	                  VISUALREMOTE_PAIR_BUTTON_PIN,
+	                  (pin >= 34 && pin <= 39) ? "INPUT" : "INPUT_PULLUP",
+	                  raw, pressed ? 1 : 0);
+#endif
+	  }
 
-  NimBLEScan *scan = NimBLEDevice::getScan();
-  scan->setAdvertisedDeviceCallbacks(new BleSyncCallbacks(), true);
-  scan->setActiveScan(false);
-  scan->setInterval(45);
-  scan->setWindow(15);
-  scan->start(0, nullptr, false);
-}
+	  NimBLEScan *scan = NimBLEDevice::getScan();
+	  scan->setAdvertisedDeviceCallbacks(new BleSyncCallbacks(), true);
+	  scan->setActiveScan(false);
+	  scan->setInterval(45);
+	  scan->setWindow(15);
+	  scan->start(0, nullptr, false);
 
-void bleSyncLoop()
-{
-  blePairButtonLoop();
+	  if (bleWasDoubleReset())
+	  {
+	    startBleLearnMode();
+	  }
+	}
 
-  if (g_bleLearnMode && VISUALREMOTE_PAIR_WINDOW_MS > 0 &&
-      (int32_t)(millis() - g_bleLearnModeUntilMs) >= 0)
-  {
-    g_bleLearnMode = false;
-    Serial.println("BLE pairing window expired");
-    if (VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0)
+	void bleSyncLoop()
+	{
+	  bleResetTapLoop();
+	  blePairButtonLoop();
+
+	  const bool pairingOverlayActive = (g_blePairUiState != PairUiState::None);
+
+	  if (!VISUALREMOTE_PAIR_PERSISTENT && g_bleLearnMode && VISUALREMOTE_PAIR_WINDOW_MS > 0 &&
+	      (int32_t)(millis() - g_bleLearnModeUntilMs) >= 0)
+	  {
+	    g_bleLearnMode = false;
+	    Serial.println("BLE pairing window expired");
+	    if (VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0)
     {
       g_blePairUiState = PairUiState::Timeout;
       g_blePairUiUntilMs = millis() + VISUALREMOTE_PAIR_RESULT_DISPLAY_MS;
@@ -1051,44 +1195,55 @@ void bleSyncLoop()
   const uint64_t groupKey = g_bleLastGroup;
   g_blePending = false;
 
-  if (g_bleGroupSavePending)
-  {
-    g_bleGroupSavePending = false;
-    if (groupKey != 0)
-    {
-      setBleGroupFilter(groupKey, /*persist=*/true);
-      if (VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0)
-      {
-        g_blePairUiState = PairUiState::Paired;
-        g_blePairUiGroupKey = groupKey;
-        g_blePairUiUntilMs = millis() + VISUALREMOTE_PAIR_RESULT_DISPLAY_MS;
-        g_blePairUiDirty = true;
-        g_blePairUiNextRefreshMs = 0;
-      }
-      else
-      {
-        g_blePairUiState = PairUiState::None;
-      }
-    }
-  }
+	  if (g_bleGroupSavePending)
+	  {
+	    g_bleGroupSavePending = false;
+	    if (groupKey != 0)
+	    {
+	      setBleGroupFilter(groupKey, /*persist=*/true);
+	      if (!VISUALREMOTE_PAIR_PERSISTENT && VISUALREMOTE_PAIR_RESULT_DISPLAY_MS > 0)
+	      {
+	        g_blePairUiState = PairUiState::Paired;
+	        g_blePairUiGroupKey = groupKey;
+	        g_blePairUiUntilMs = millis() + VISUALREMOTE_PAIR_RESULT_DISPLAY_MS;
+	        g_blePairUiDirty = true;
+	        g_blePairUiNextRefreshMs = 0;
+	      }
+	      else
+	      {
+	        g_blePairUiState = PairUiState::Paired;
+	        g_blePairUiGroupKey = groupKey;
+	        g_blePairUiUntilMs = 0;
+	        g_blePairUiDirty = true;
+	        g_blePairUiNextRefreshMs = 0;
+	      }
+	    }
+	  }
 
-  const int16_t mapped = mapEffectToProgram(effect);
-  Serial.printf("BLE preset: %u -> map %d timebase %lu\n", effect, mapped,
-                static_cast<unsigned long>(timebase));
-  applyMappedProgram(effect);
-}
+	  const int16_t mapped = mapEffectToProgram(effect);
+	  Serial.printf("BLE preset: %u -> map %d timebase %lu\n", effect, mapped,
+	                static_cast<unsigned long>(timebase));
+	  if (pairingOverlayActive || g_bleLearnMode)
+	  {
+#if VISUALREMOTE_PAIR_DEBUG_LOG
+	    Serial.println("BLE preset ignored (pairing overlay active)");
+#endif
+	    return;
+	  }
+	  applyMappedProgram(effect);
+	}
 
 bool bleSyncHasLock()
 {
   return g_bleHasSync;
 }
 #else
-void bleSyncSetup() {}
-void bleSyncLoop() {}
-bool bleSyncHasLock() { return false; }
-bool blePairingUiLoop() { return false; }
+	void bleSyncSetup() {}
+	void bleSyncLoop() {}
+	bool bleSyncHasLock() { return false; }
+	bool blePairingUiLoop() { return false; }
 #endif
-} // namespace
+	} // namespace
 
 static void waitForSerial()
 {
