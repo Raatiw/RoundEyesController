@@ -98,6 +98,17 @@
 #define ANIMATED_GIF_SD_FREQ 40000000
 #endif
 
+// Boot-time SD benchmark overlay (shown after the color test).
+#ifndef BOOT_SD_TEST_DISPLAY_MS
+#define BOOT_SD_TEST_DISPLAY_MS 2000
+#endif
+#ifndef BOOT_SD_TEST_BYTES
+#define BOOT_SD_TEST_BYTES (256UL * 1024UL)
+#endif
+#ifndef BOOT_SD_TEST_BUFFER_BYTES
+#define BOOT_SD_TEST_BUFFER_BYTES 4096
+#endif
+
 // GIF files to cycle through on the SD card (root directory by default).
 #ifndef ANIMATED_GIF_FILES
 #define ANIMATED_GIF_FILES                                                                                      \

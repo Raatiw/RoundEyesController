@@ -889,6 +889,267 @@ static void waitForSerial()
   }
 }
 
+#if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
+const char *sdCardTypeName(uint8_t type)
+{
+  switch (type)
+  {
+  case CARD_MMC:
+    return "MMC";
+  case CARD_SD:
+    return "SDSC";
+  case CARD_SDHC:
+    return "SDHC";
+  default:
+    return "NONE";
+  }
+}
+
+bool sdFindReadableFile(char *outPath, size_t outPathLen)
+{
+  if (!outPath || outPathLen == 0)
+  {
+    return false;
+  }
+  outPath[0] = '\0';
+
+  const char *const candidates[] = ANIMATED_GIF_FILES;
+  const size_t candidateCount = sizeof(candidates) / sizeof(candidates[0]);
+  for (size_t i = 0; i < candidateCount; ++i)
+  {
+    File probe = SD.open(candidates[i], FILE_READ);
+    if (probe && !probe.isDirectory())
+    {
+      strncpy(outPath, candidates[i], outPathLen - 1);
+      outPath[outPathLen - 1] = '\0';
+      probe.close();
+      return true;
+    }
+    if (probe)
+    {
+      probe.close();
+    }
+  }
+
+  File root = SD.open("/");
+  if (!root || !root.isDirectory())
+  {
+    if (root)
+    {
+      root.close();
+    }
+    return false;
+  }
+
+  while (true)
+  {
+    File entry = root.openNextFile();
+    if (!entry)
+    {
+      break;
+    }
+    if (!entry.isDirectory())
+    {
+      const char *name = entry.name();
+      if (name && name[0] != '\0')
+      {
+        strncpy(outPath, name, outPathLen - 1);
+        outPath[outPathLen - 1] = '\0';
+      }
+      entry.close();
+      root.close();
+      return outPath[0] != '\0';
+    }
+    entry.close();
+  }
+
+  root.close();
+  return false;
+}
+
+bool sdBenchmarkRead(const char *path, uint32_t &outBytesPerSecond)
+{
+  outBytesPerSecond = 0;
+  if (!path || path[0] == '\0')
+  {
+    return false;
+  }
+
+  File file = SD.open(path, FILE_READ);
+  if (!file || file.isDirectory())
+  {
+    if (file)
+    {
+      file.close();
+    }
+    return false;
+  }
+
+  const uint32_t fileSize = static_cast<uint32_t>(file.size());
+  const uint32_t targetBytes = fileSize < BOOT_SD_TEST_BYTES ? fileSize : static_cast<uint32_t>(BOOT_SD_TEST_BYTES);
+  if (targetBytes == 0)
+  {
+    file.close();
+    return false;
+  }
+
+  static uint8_t buffer[BOOT_SD_TEST_BUFFER_BYTES];
+  uint32_t totalRead = 0;
+  const uint64_t startUs = micros();
+  while (totalRead < targetBytes)
+  {
+    const uint32_t remaining = targetBytes - totalRead;
+    const uint32_t chunk = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
+    const int bytesRead = file.read(buffer, chunk);
+    if (bytesRead <= 0)
+    {
+      break;
+    }
+    totalRead += static_cast<uint32_t>(bytesRead);
+  }
+  file.close();
+
+  const uint64_t elapsedUs = micros() - startUs;
+  if (totalRead == 0)
+  {
+    return false;
+  }
+  const uint64_t denom = elapsedUs > 0 ? elapsedUs : 1;
+  outBytesPerSecond = static_cast<uint32_t>((uint64_t(totalRead) * 1000000ULL) / denom);
+  return true;
+}
+
+void showSdBootTest()
+{
+  if (BOOT_SD_TEST_DISPLAY_MS == 0)
+  {
+    return;
+  }
+
+  const uint8_t prevRotation = gfx->getRotation();
+  gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
+
+  struct BootLine
+  {
+    const char *text;
+    uint16_t color;
+  };
+
+  auto drawCenteredLines = [](const BootLine *lines, size_t count)
+  {
+    if (!lines || count == 0)
+    {
+      return;
+    }
+
+    gfx->setTextWrap(false);
+
+    int16_t x1 = 0;
+    int16_t y1 = 0;
+    uint16_t w = 0;
+    uint16_t h = 0;
+    gfx->getTextBounds("A", 0, 0, &x1, &y1, &w, &h);
+    const int16_t lineHeight = static_cast<int16_t>(h > 0 ? h : 16);
+    const int16_t linePitch = static_cast<int16_t>(lineHeight + 2);
+    const int16_t blockHeight = static_cast<int16_t>(count * linePitch - 2);
+
+    const int16_t screenWidth = gfx->width();
+    const int16_t screenHeight = gfx->height();
+    int16_t y = static_cast<int16_t>((screenHeight - blockHeight) / 2);
+    if (y < 0)
+    {
+      y = 0;
+    }
+
+    for (size_t i = 0; i < count; ++i)
+    {
+      if (!lines[i].text)
+      {
+        continue;
+      }
+      gfx->setTextColor(lines[i].color);
+      gfx->getTextBounds(lines[i].text, 0, 0, &x1, &y1, &w, &h);
+      int16_t x = static_cast<int16_t>((screenWidth - static_cast<int16_t>(w)) / 2);
+      if (x < 0)
+      {
+        x = 0;
+      }
+      gfx->setCursor(x, y);
+      gfx->print(lines[i].text);
+      y = static_cast<int16_t>(y + linePitch);
+    }
+  };
+
+  gfx->fillScreen(BLACK);
+  gfx->setTextSize(2);
+  gfx->setTextColor(WHITE);
+
+  const uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE)
+  {
+    const BootLine lines[] = {
+        {"SD TEST", WHITE},
+        {"SD FAIL", RED},
+        {"No card / init", RED},
+    };
+    drawCenteredLines(lines, sizeof(lines) / sizeof(lines[0]));
+    delay(BOOT_SD_TEST_DISPLAY_MS);
+    gfx->setRotation(prevRotation);
+    return;
+  }
+
+  char lineType[24] = {0};
+  snprintf(lineType, sizeof(lineType), "Type: %s", sdCardTypeName(cardType));
+
+  const uint64_t sizeBytes = SD.cardSize();
+  char lineSize[24] = {0};
+  if (sizeBytes > 0)
+  {
+    const uint32_t sizeMb = static_cast<uint32_t>(sizeBytes / (1024ULL * 1024ULL));
+    snprintf(lineSize, sizeof(lineSize), "Size: %lu MB", static_cast<unsigned long>(sizeMb));
+  }
+
+  char lineSpi[24] = {0};
+  snprintf(lineSpi, sizeof(lineSpi), "SPI: %lu MHz",
+           static_cast<unsigned long>(ANIMATED_GIF_SD_FREQ / 1000000UL));
+
+  char testPath[64] = {0};
+  uint32_t bytesPerSec = 0;
+  const bool hasReadSpeed = sdFindReadableFile(testPath, sizeof(testPath)) && sdBenchmarkRead(testPath, bytesPerSec);
+  char lineRead[28] = {0};
+  if (hasReadSpeed)
+  {
+    snprintf(lineRead, sizeof(lineRead), "Read: %lu KB/s",
+             static_cast<unsigned long>(bytesPerSec / 1024UL));
+  }
+
+  BootLine lines[8] = {};
+  size_t lineCount = 0;
+  lines[lineCount++] = {"SD TEST", WHITE};
+  lines[lineCount++] = {"SD OK", GREEN};
+  lines[lineCount++] = {lineType, WHITE};
+  if (lineSize[0] != '\0')
+  {
+    lines[lineCount++] = {lineSize, WHITE};
+  }
+  lines[lineCount++] = {lineSpi, WHITE};
+  if (hasReadSpeed)
+  {
+    lines[lineCount++] = {lineRead, WHITE};
+    lines[lineCount++] = {testPath, WHITE};
+  }
+  else
+  {
+    lines[lineCount++] = {"Read test failed", YELLOW};
+  }
+
+  drawCenteredLines(lines, lineCount);
+
+  delay(BOOT_SD_TEST_DISPLAY_MS);
+  gfx->setRotation(prevRotation);
+}
+#endif
+
 void setup()
 {
   Serial.begin(115200);
@@ -980,6 +1241,11 @@ void setup()
     delay(500);
   }
   gfx->fillScreen(BLACK);
+
+#if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
+  showSdBootTest();
+  gfx->fillScreen(BLACK);
+#endif
 
 #if defined(ENABLE_ANIMATED_GIF)
   animatedGifSetup();
