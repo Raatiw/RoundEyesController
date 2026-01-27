@@ -1255,7 +1255,7 @@ bool bleSyncHasLock()
 	bool bleSyncHasLock() { return false; }
 	bool blePairingUiLoop() { return false; }
 #endif
-	} // namespace
+} // namespace
 
 static void waitForSerial()
 {
@@ -1265,6 +1265,45 @@ static void waitForSerial()
     delay(10);
   }
 }
+
+namespace
+{
+bool pairButtonIsPressed()
+{
+  if (VISUALREMOTE_PAIR_BUTTON_PIN < 0)
+  {
+    return false;
+  }
+  const int raw = digitalRead(VISUALREMOTE_PAIR_BUTTON_PIN);
+  return VISUALREMOTE_PAIR_BUTTON_ACTIVE_LOW ? (raw == LOW) : (raw == HIGH);
+}
+
+[[noreturn]] void bootEnterPairingUntilReset()
+{
+#if defined(ARDUINO_ARCH_ESP32)
+  startBleLearnMode();
+  while (true)
+  {
+    bleSyncLoop();
+    (void)blePairingUiLoop();
+    delay(10);
+  }
+#else
+  while (true)
+  {
+    delay(1000);
+  }
+#endif
+}
+
+void bootCheckEnterPairing()
+{
+  if (VISUALREMOTE_PAIR_PERSISTENT && pairButtonIsPressed())
+  {
+    bootEnterPairingUntilReset();
+  }
+}
+} // namespace
 
 #if defined(ENABLE_ANIMATED_GIF) && defined(ANIMATED_GIF_USE_SD)
 const char *sdCardTypeName(uint8_t type)
@@ -1403,6 +1442,8 @@ void showSdBootTest()
     return;
   }
 
+  bootCheckEnterPairing();
+
   const uint8_t prevRotation = gfx->getRotation();
   gfx->setRotation(DISPLAY_ROTATION);
 
@@ -1419,7 +1460,12 @@ void showSdBootTest()
         {"No card / init", RED},
     };
     drawCenteredLines(lines, sizeof(lines) / sizeof(lines[0]));
-    delay(BOOT_SD_TEST_DISPLAY_MS);
+    const uint32_t startMs = millis();
+    while ((millis() - startMs) < BOOT_SD_TEST_DISPLAY_MS)
+    {
+      bootCheckEnterPairing();
+      delay(10);
+    }
     gfx->setRotation(prevRotation);
     return;
   }
@@ -1471,7 +1517,12 @@ void showSdBootTest()
 
   drawCenteredLines(lines, lineCount);
 
-  delay(BOOT_SD_TEST_DISPLAY_MS);
+  const uint32_t startMs = millis();
+  while ((millis() - startMs) < BOOT_SD_TEST_DISPLAY_MS)
+  {
+    bootCheckEnterPairing();
+    delay(10);
+  }
   gfx->setRotation(prevRotation);
 }
 #endif
@@ -1529,6 +1580,8 @@ void bootWifiConnectAndDisplay()
     return;
   }
 
+  bootCheckEnterPairing();
+
   const uint32_t startMs = millis();
   uint32_t nextUiMs = 0;
   bool started = false;
@@ -1563,6 +1616,7 @@ void bootWifiConnectAndDisplay()
 
       showCenteredStatusScreen(lines, count, /*textSize=*/2);
     }
+    bootCheckEnterPairing();
     delay(50);
   }
 
@@ -1576,7 +1630,12 @@ void bootWifiConnectAndDisplay()
       lines[count++] = UiLine{OTA_WIFI_SSID, WHITE};
       lines[count++] = UiLine{"Starting...", YELLOW};
       showCenteredStatusScreen(lines, count, /*textSize=*/2);
-      delay(BOOT_WIFI_FAILED_DISPLAY_MS);
+      const uint32_t failStartMs = millis();
+      while ((millis() - failStartMs) < BOOT_WIFI_FAILED_DISPLAY_MS)
+      {
+        bootCheckEnterPairing();
+        delay(10);
+      }
       gfx->fillScreen(BLACK);
     }
     return;
@@ -1597,7 +1656,12 @@ void bootWifiConnectAndDisplay()
   lines[count++] = UiLine{OTA_WIFI_SSID, WHITE};
   lines[count++] = UiLine{ipText, YELLOW};
   showCenteredStatusScreen(lines, count, /*textSize=*/2);
-  delay(BOOT_WIFI_CONNECTED_DISPLAY_MS);
+  const uint32_t okStartMs = millis();
+  while ((millis() - okStartMs) < BOOT_WIFI_CONNECTED_DISPLAY_MS)
+  {
+    bootCheckEnterPairing();
+    delay(10);
+  }
   gfx->fillScreen(BLACK);
 }
 
