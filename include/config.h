@@ -7,6 +7,40 @@
 #define ENABLE_ANIMATED_GIF
 #define ENABLE_EYE_PROGRAM // Include the eye animation in the program loop.
 
+// OTA updates (ESP32) -------------------------------------------------
+// Uses ArduinoOTA (WiFi). Fill in SSID/PASS to enable.
+#ifndef ENABLE_OTA
+#define ENABLE_OTA 1
+#endif
+
+// Boot-time WiFi connect (also used by OTA defaults).
+#ifndef BOOT_WIFI_SSID
+#define BOOT_WIFI_SSID "wifihaar"
+#endif
+#ifndef BOOT_WIFI_PASS
+#define BOOT_WIFI_PASS "B13rtje!"
+#endif
+#ifndef BOOT_WIFI_CONNECT_TIMEOUT_MS
+#define BOOT_WIFI_CONNECT_TIMEOUT_MS 30000
+#endif
+#ifndef BOOT_WIFI_CONNECTED_DISPLAY_MS
+#define BOOT_WIFI_CONNECTED_DISPLAY_MS 3000
+#endif
+
+#ifndef OTA_WIFI_SSID
+#define OTA_WIFI_SSID BOOT_WIFI_SSID
+#endif
+#ifndef OTA_WIFI_PASS
+#define OTA_WIFI_PASS BOOT_WIFI_PASS
+#endif
+#ifndef OTA_HOSTNAME
+#define OTA_HOSTNAME "RoundEyes"
+#endif
+// Optional: set a password for OTA uploads. Leave empty for no password.
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD ""
+#endif
+
 // Optional visual transition when switching effects via BLE mapping.
 // Uses the hypno spiral renderer as a short "swirl" interstitial.
 #define ENABLE_SWIRL_TRANSITION

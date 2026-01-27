@@ -8,6 +8,8 @@
 #include <Preferences.h>
 #include <esp_random.h>
 #include <esp_attr.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
 #endif
 
 #include "eye_types.h"
@@ -406,6 +408,16 @@ void drawCenteredLines(const UiLine *lines, size_t count)
     gfx->print(lines[i].text);
     y = static_cast<int16_t>(y + linePitch);
   }
+}
+
+void showCenteredStatusScreen(const UiLine *lines, size_t count, uint8_t textSize = 2)
+{
+  const uint8_t prevRotation = gfx->getRotation();
+  gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
+  gfx->fillScreen(BLACK);
+  gfx->setTextSize(textSize);
+  drawCenteredLines(lines, count);
+  gfx->setRotation(prevRotation);
 }
 
 // Map incoming WLED effect numbers to programs.
@@ -1464,6 +1476,193 @@ void showSdBootTest()
 }
 #endif
 
+namespace
+{
+#if defined(ARDUINO_ARCH_ESP32) && ENABLE_OTA
+bool g_otaEnabled = false;
+bool g_otaInProgress = false;
+bool g_otaUiDirty = false;
+uint32_t g_otaLastUiMs = 0;
+uint32_t g_otaRebootAtMs = 0;
+uint8_t g_otaProgressPct = 0;
+char g_otaStatusLine[32] = {0};
+
+bool otaIsConfigured()
+{
+  const char *ssid = OTA_WIFI_SSID;
+  return ssid && ssid[0] != '\0';
+}
+
+bool wifiEnsureConnected(uint32_t timeoutMs)
+{
+  if (!otaIsConfigured())
+  {
+    return false;
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    return true;
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.begin(OTA_WIFI_SSID, OTA_WIFI_PASS);
+
+  const uint32_t startMs = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < timeoutMs)
+  {
+    delay(50);
+  }
+
+  return WiFi.status() == WL_CONNECTED;
+}
+
+void bootWifiConnectAndDisplay()
+{
+  if (BOOT_WIFI_CONNECT_TIMEOUT_MS == 0 || BOOT_WIFI_CONNECTED_DISPLAY_MS == 0)
+  {
+    return;
+  }
+
+  if (!wifiEnsureConnected(BOOT_WIFI_CONNECT_TIMEOUT_MS))
+  {
+    return;
+  }
+
+  const IPAddress ip = WiFi.localIP();
+  char ipText[32] = {0};
+  snprintf(ipText, sizeof(ipText), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+
+  UiLine lines[5] = {};
+  size_t count = 0;
+  lines[count++] = UiLine{"WIFI OK", GREEN};
+  lines[count++] = UiLine{OTA_WIFI_SSID, WHITE};
+  lines[count++] = UiLine{ipText, YELLOW};
+  showCenteredStatusScreen(lines, count, /*textSize=*/2);
+  delay(BOOT_WIFI_CONNECTED_DISPLAY_MS);
+  gfx->fillScreen(BLACK);
+}
+
+void otaDrawUi()
+{
+  UiLine lines[4] = {};
+  size_t count = 0;
+  lines[count++] = UiLine{"OTA UPDATE", WHITE};
+  lines[count++] = UiLine{g_otaStatusLine[0] ? g_otaStatusLine : "Working...", YELLOW};
+
+  char linePct[24] = {0};
+  snprintf(linePct, sizeof(linePct), "Progress: %u%%", static_cast<unsigned>(g_otaProgressPct));
+  lines[count++] = UiLine{linePct, GREEN};
+
+  showCenteredStatusScreen(lines, count, /*textSize=*/2);
+}
+
+void otaSetup()
+{
+  g_otaEnabled = false;
+  g_otaInProgress = false;
+  g_otaUiDirty = false;
+  g_otaLastUiMs = 0;
+  g_otaRebootAtMs = 0;
+  g_otaProgressPct = 0;
+  g_otaStatusLine[0] = '\0';
+
+  if (!otaIsConfigured())
+  {
+    return;
+  }
+
+  if (!wifiEnsureConnected(BOOT_WIFI_CONNECT_TIMEOUT_MS > 0 ? BOOT_WIFI_CONNECT_TIMEOUT_MS : 5000))
+  {
+    Serial.println("OTA: WiFi connect failed");
+    return;
+  }
+
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
+  if (strlen(OTA_PASSWORD) > 0)
+  {
+    ArduinoOTA.setPassword(OTA_PASSWORD);
+  }
+
+  ArduinoOTA
+      .onStart([]()
+               {
+                 g_otaInProgress = true;
+                 g_otaProgressPct = 0;
+                 snprintf(g_otaStatusLine, sizeof(g_otaStatusLine), "Starting...");
+                 g_otaUiDirty = true;
+               })
+      .onEnd([]()
+             {
+               g_otaInProgress = true;
+               g_otaProgressPct = 100;
+               snprintf(g_otaStatusLine, sizeof(g_otaStatusLine), "Done. Rebooting");
+               g_otaUiDirty = true;
+               g_otaRebootAtMs = millis() + 500;
+             })
+      .onProgress([](unsigned int progress, unsigned int total)
+                  {
+                    g_otaInProgress = true;
+                    const uint8_t pct = (total > 0) ? static_cast<uint8_t>((progress * 100U) / total) : 0;
+                    if (pct != g_otaProgressPct)
+                    {
+                      g_otaProgressPct = pct;
+                      snprintf(g_otaStatusLine, sizeof(g_otaStatusLine), "Receiving...");
+                      g_otaUiDirty = true;
+                    }
+                  })
+      .onError([](ota_error_t error)
+               {
+                 g_otaInProgress = false;
+                 g_otaProgressPct = 0;
+                 snprintf(g_otaStatusLine, sizeof(g_otaStatusLine), "Error: %u", static_cast<unsigned>(error));
+                 g_otaUiDirty = true;
+                 Serial.printf("OTA error: %u\n", static_cast<unsigned>(error));
+               });
+
+  ArduinoOTA.begin();
+  g_otaEnabled = true;
+
+  Serial.print("OTA: WiFi connected, IP=");
+  Serial.println(WiFi.localIP());
+}
+
+void otaLoop()
+{
+  if (!g_otaEnabled)
+  {
+    return;
+  }
+
+  ArduinoOTA.handle();
+
+  const uint32_t now = millis();
+  if (g_otaRebootAtMs > 0 && (int32_t)(now - g_otaRebootAtMs) >= 0)
+  {
+    ESP.restart();
+  }
+
+  if (!g_otaInProgress && !g_otaUiDirty)
+  {
+    return;
+  }
+
+  if (!g_otaUiDirty && (now - g_otaLastUiMs) < 250)
+  {
+    return;
+  }
+
+  g_otaUiDirty = false;
+  g_otaLastUiMs = now;
+  otaDrawUi();
+}
+#else
+void otaSetup() {}
+void otaLoop() {}
+#endif
+} // namespace
+
 void setup()
 {
   Serial.begin(115200);
@@ -1561,6 +1760,9 @@ void setup()
   gfx->fillScreen(BLACK);
 #endif
 
+  bootWifiConnectAndDisplay();
+  otaSetup();
+
 #if defined(ENABLE_ANIMATED_GIF)
   animatedGifSetup();
   Serial.println("Animated GIF initialized");
@@ -1587,6 +1789,8 @@ void setup()
 
 void loop()
 {
+  otaLoop();
+
   bleSyncLoop();
   if (blePairingUiLoop())
   {
