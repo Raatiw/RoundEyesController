@@ -1537,6 +1537,7 @@ uint32_t g_otaLastUiMs = 0;
 uint32_t g_otaRebootAtMs = 0;
 uint8_t g_otaProgressPct = 0;
 char g_otaStatusLine[32] = {0};
+uint32_t g_otaLastConnectCheckMs = 0;
 
 bool otaIsConfigured()
 {
@@ -1679,30 +1680,19 @@ void otaDrawUi()
   showCenteredStatusScreen(lines, count, /*textSize=*/2);
 }
 
-void otaSetup()
+void otaBeginIfConnected()
 {
-  g_otaEnabled = false;
-  g_otaInProgress = false;
-  g_otaUiDirty = false;
-  g_otaLastUiMs = 0;
-  g_otaRebootAtMs = 0;
-  g_otaProgressPct = 0;
-  g_otaStatusLine[0] = '\0';
-
-  if (!otaIsConfigured())
+  if (g_otaEnabled)
   {
     return;
   }
-
-  // WiFi is a boot-time best effort. If it didn't connect, continue running the
-  // normal program without blocking further for OTA.
   if (WiFi.status() != WL_CONNECTED)
   {
-    Serial.println("OTA: WiFi not connected (skipping OTA)");
     return;
   }
 
   ArduinoOTA.setHostname(OTA_HOSTNAME);
+  ArduinoOTA.setPort(3232);
   if (strlen(OTA_PASSWORD) > 0)
   {
     ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -1747,20 +1737,54 @@ void otaSetup()
   ArduinoOTA.begin();
   g_otaEnabled = true;
 
-  Serial.print("OTA: WiFi connected, IP=");
+  Serial.print("OTA: ready on ");
   Serial.println(WiFi.localIP());
+}
+
+void otaSetup()
+{
+  g_otaEnabled = false;
+  g_otaInProgress = false;
+  g_otaUiDirty = false;
+  g_otaLastUiMs = 0;
+  g_otaRebootAtMs = 0;
+  g_otaProgressPct = 0;
+  g_otaStatusLine[0] = '\0';
+  g_otaLastConnectCheckMs = 0;
+
+  if (!otaIsConfigured())
+  {
+    return;
+  }
+
+  // WiFi is best-effort at boot; if it connects later, enable OTA then.
+  otaBeginIfConnected();
+  if (!g_otaEnabled)
+  {
+    Serial.println("OTA: waiting for WiFi...");
+  }
 }
 
 void otaLoop()
 {
+  if (!otaIsConfigured())
+  {
+    return;
+  }
+
+  const uint32_t now = millis();
   if (!g_otaEnabled)
   {
+    if (g_otaLastConnectCheckMs == 0 || (now - g_otaLastConnectCheckMs) >= 500)
+    {
+      g_otaLastConnectCheckMs = now;
+      otaBeginIfConnected();
+    }
     return;
   }
 
   ArduinoOTA.handle();
 
-  const uint32_t now = millis();
   if (g_otaRebootAtMs > 0 && (int32_t)(now - g_otaRebootAtMs) >= 0)
   {
     ESP.restart();
