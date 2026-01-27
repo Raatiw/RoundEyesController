@@ -1519,12 +1519,70 @@ bool wifiEnsureConnected(uint32_t timeoutMs)
 
 void bootWifiConnectAndDisplay()
 {
-  if (BOOT_WIFI_CONNECT_TIMEOUT_MS == 0 || BOOT_WIFI_CONNECTED_DISPLAY_MS == 0)
+  if (BOOT_WIFI_CONNECT_TIMEOUT_MS == 0)
   {
     return;
   }
 
-  if (!wifiEnsureConnected(BOOT_WIFI_CONNECT_TIMEOUT_MS))
+  if (!otaIsConfigured())
+  {
+    return;
+  }
+
+  const uint32_t startMs = millis();
+  uint32_t nextUiMs = 0;
+  bool started = false;
+
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(OTA_WIFI_SSID, OTA_WIFI_PASS);
+    started = true;
+  }
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < BOOT_WIFI_CONNECT_TIMEOUT_MS)
+  {
+    const uint32_t now = millis();
+    if (BOOT_WIFI_CONNECTING_STATUS_REFRESH_MS == 0 || (int32_t)(now - nextUiMs) >= 0)
+    {
+      nextUiMs = (BOOT_WIFI_CONNECTING_STATUS_REFRESH_MS > 0) ? (now + BOOT_WIFI_CONNECTING_STATUS_REFRESH_MS) : now;
+
+      UiLine lines[4] = {};
+      size_t count = 0;
+      lines[count++] = UiLine{"WIFI", WHITE};
+      lines[count++] = UiLine{started ? "Connecting..." : "Connected", YELLOW};
+      lines[count++] = UiLine{OTA_WIFI_SSID, WHITE};
+
+      char lineTime[24] = {0};
+      const uint32_t elapsedMs = now - startMs;
+      const uint32_t remainingMs =
+          (elapsedMs >= BOOT_WIFI_CONNECT_TIMEOUT_MS) ? 0 : (BOOT_WIFI_CONNECT_TIMEOUT_MS - elapsedMs);
+      snprintf(lineTime, sizeof(lineTime), "Try: %lus",
+               static_cast<unsigned long>((remainingMs + 999) / 1000));
+      lines[count++] = UiLine{lineTime, YELLOW};
+
+      showCenteredStatusScreen(lines, count, /*textSize=*/2);
+    }
+    delay(50);
+  }
+
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    if (BOOT_WIFI_FAILED_DISPLAY_MS > 0)
+    {
+      UiLine lines[3] = {};
+      size_t count = 0;
+      lines[count++] = UiLine{"WIFI FAIL", RED};
+      lines[count++] = UiLine{OTA_WIFI_SSID, WHITE};
+      lines[count++] = UiLine{"Starting...", YELLOW};
+      showCenteredStatusScreen(lines, count, /*textSize=*/2);
+      delay(BOOT_WIFI_FAILED_DISPLAY_MS);
+      gfx->fillScreen(BLACK);
+    }
+    return;
+  }
+
+  if (BOOT_WIFI_CONNECTED_DISPLAY_MS == 0)
   {
     return;
   }
@@ -1572,9 +1630,11 @@ void otaSetup()
     return;
   }
 
-  if (!wifiEnsureConnected(BOOT_WIFI_CONNECT_TIMEOUT_MS > 0 ? BOOT_WIFI_CONNECT_TIMEOUT_MS : 5000))
+  // WiFi is a boot-time best effort. If it didn't connect, continue running the
+  // normal program without blocking further for OTA.
+  if (WiFi.status() != WL_CONNECTED)
   {
-    Serial.println("OTA: WiFi connect failed");
+    Serial.println("OTA: WiFi not connected (skipping OTA)");
     return;
   }
 
