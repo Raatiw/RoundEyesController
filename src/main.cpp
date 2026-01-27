@@ -413,7 +413,7 @@ void drawCenteredLines(const UiLine *lines, size_t count)
 void showCenteredStatusScreen(const UiLine *lines, size_t count, uint8_t textSize = 2)
 {
   const uint8_t prevRotation = gfx->getRotation();
-  gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
+  gfx->setRotation(DISPLAY_ROTATION);
   gfx->fillScreen(BLACK);
   gfx->setTextSize(textSize);
   drawCenteredLines(lines, count);
@@ -906,7 +906,7 @@ void setBleGroupFilter(uint64_t groupKey, bool persist)
   g_blePairUiNextRefreshMs = (refreshMs > 0) ? (now + refreshMs) : 0;
 
   const uint8_t prevRotation = gfx->getRotation();
-  gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
+  gfx->setRotation(DISPLAY_ROTATION);
   gfx->fillScreen(BLACK);
   gfx->setTextSize(2);
 
@@ -1404,7 +1404,7 @@ void showSdBootTest()
   }
 
   const uint8_t prevRotation = gfx->getRotation();
-  gfx->setRotation(static_cast<uint8_t>((prevRotation + 2) & 0x03));
+  gfx->setRotation(DISPLAY_ROTATION);
 
   gfx->fillScreen(BLACK);
   gfx->setTextSize(2);
@@ -1506,7 +1506,6 @@ bool wifiEnsureConnected(uint32_t timeoutMs)
   }
 
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
   WiFi.begin(OTA_WIFI_SSID, OTA_WIFI_PASS);
 
   const uint32_t startMs = millis();
